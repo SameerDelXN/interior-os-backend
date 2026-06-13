@@ -1,0 +1,100 @@
+// =============================================================================
+// InteriorOS Backend — RFIs API Route
+// =============================================================================
+
+import { NextRequest } from 'next/server';
+import { withAuth, getOrganizationId } from '@/middlewares/auth.middleware';
+import { connectDB } from '@/lib/db';
+import { RFI } from '@/models/rfi.model';
+import { successResponse, createdResponse, serverErrorResponse, errorResponse, notFoundResponse } from '@/lib/api-response';
+import type { JwtPayload } from '@/lib/jwt';
+
+// GET: Retrieve all RFIs for the project
+async function getRfisHandler(req: NextRequest, context: { params: Promise<Record<string, string>> }, auth: JwtPayload) {
+  try {
+    await connectDB();
+    const organizationId = getOrganizationId(auth);
+    const { projectId } = await context.params;
+
+    const rfis = await RFI.find({ projectId, organizationId }).sort({ createdAt: -1 });
+    return successResponse(rfis);
+  } catch (error) {
+    console.error('Get RFIs error:', error);
+    return serverErrorResponse();
+  }
+}
+
+// POST: Raise a new RFI
+async function createRfiHandler(req: NextRequest, context: { params: Promise<Record<string, string>> }, auth: JwtPayload) {
+  try {
+    await connectDB();
+    const organizationId = getOrganizationId(auth);
+    const { projectId } = await context.params;
+    const body = await req.json();
+
+    const { subject, question } = body;
+    if (!subject || !question) {
+      return errorResponse('subject and question are required', 400);
+    }
+
+    const count = await RFI.countDocuments({ organizationId });
+    const rfiNumber = `RFI-2026-${String(count + 1).padStart(3, '0')}`;
+
+    const newRfi = new RFI({
+      ...body,
+      rfiNumber,
+      projectId,
+      organizationId,
+      raisedBy: auth.userId,
+      assignedTo: body.assignedTo || auth.userId,
+      dueDate: body.dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // default 7 days
+      status: 'open',
+      priority: body.priority || 'medium',
+    });
+
+    await newRfi.save();
+    return createdResponse(newRfi, 'RFI raised successfully');
+  } catch (error) {
+    console.error('Create RFI error:', error);
+    return serverErrorResponse();
+  }
+}
+
+// PUT: Respond to or close RFI
+async function updateRfiHandler(req: NextRequest, context: { params: Promise<Record<string, string>> }, auth: JwtPayload) {
+  try {
+    await connectDB();
+    const organizationId = getOrganizationId(auth);
+    const { projectId } = await context.params;
+    const body = await req.json();
+
+    const { rfiId, status, response } = body;
+    if (!rfiId) {
+      return errorResponse('rfiId is required', 400);
+    }
+
+    const rfi = await RFI.findOne({ _id: rfiId, projectId, organizationId });
+    if (!rfi) {
+      return notFoundResponse('RFI not found');
+    }
+
+    if (status) {
+      rfi.status = status;
+    }
+    
+    if (response) {
+      rfi.question = rfi.question + `\n\n[RESPONSE]: ${response}`;
+      rfi.status = 'responded';
+    }
+
+    await rfi.save();
+    return successResponse(rfi, 'RFI updated successfully');
+  } catch (error) {
+    console.error('Update RFI error:', error);
+    return serverErrorResponse();
+  }
+}
+
+export const GET = withAuth(getRfisHandler);
+export const POST = withAuth(createRfiHandler);
+export const PUT = withAuth(updateRfiHandler);
