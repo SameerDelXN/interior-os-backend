@@ -11,7 +11,8 @@ const ALLOWED_ORIGINS = [
   'http://192.168.1.42:3001',
   'http://localhost:3002',
   'http://localhost:3003',
-  'https://interior-os-frontend.vercel.app'
+  'https://interior-os-frontend.vercel.app',
+  'https://interior-os-client.vercel.app'
 ];
 
 export function middleware(request: NextRequest) {
