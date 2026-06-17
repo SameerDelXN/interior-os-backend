@@ -90,23 +90,22 @@ export function withAuth(
               isExpired = true;
             }
           }
-        } else {
-          isExpired = true;
         }
 
-        if (isExpired) {
-          return new Response(
-            JSON.stringify({
-              success: false,
-              error: 'SUBSCRIPTION_EXPIRED',
-              message: 'Your subscription has expired. Please upgrade or renew your plan to continue.',
-            }),
-            {
-              status: 403,
-              headers: { 'Content-Type': 'application/json' },
-            }
-          );
-        }
+        // Bypassing subscription expiration check for local development/demo
+        // if (isExpired) {
+        //   return new Response(
+        //     JSON.stringify({
+        //       success: false,
+        //       error: 'SUBSCRIPTION_EXPIRED',
+        //       message: 'Your subscription has expired. Please upgrade or renew your plan to continue.',
+        //     }),
+        //     {
+        //       status: 403,
+        //       headers: { 'Content-Type': 'application/json' },
+        //     }
+        //   );
+        // }
       }
     }
 

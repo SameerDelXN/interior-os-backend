@@ -44,10 +44,10 @@ async function getProjectsHandler(req: NextRequest, _context: any, auth: JwtPayl
   try {
     await connectDB();
     const organizationId = getOrganizationId(auth);
-    
+
     const searchParams = req.nextUrl.searchParams;
     const { page, limit, sort, order } = parsePaginationParams(searchParams);
-    
+
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
     const type = searchParams.get('type') || '';
@@ -64,7 +64,7 @@ async function getProjectsHandler(req: NextRequest, _context: any, auth: JwtPayl
       const projectIds = userMemberships.map((m) => m.projectId);
       query._id = { $in: projectIds };
     }
-    
+
     if (status) {
       query.status = status;
     }
