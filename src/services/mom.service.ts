@@ -82,34 +82,112 @@ export async function processRecallWebhook(payload: any) {
   if (!mom) return; 
 
   const RECALL_API_KEY = process.env.RECALL_API_KEY;
-  // Fetch the transcript from Recall
-  const transcriptResponse = await fetch(`${RECALL_API_BASE}/bot/${botId}/transcript`, {
-    headers: {
-      'Authorization': `Token ${RECALL_API_KEY}`,
-    }
-  });
 
-  if (!transcriptResponse.ok) {
-    console.error('Failed to fetch transcript from Recall');
-    return;
-  }
-
-  const transcriptData = await transcriptResponse.json();
-  
-  // Recall.ai returns an array of utterances
-  const fullText = transcriptData.map((utterance: any) => 
-    utterance.words.map((w: any) => w.text).join('')
-  ).join('\n');
-
-  if (!fullText || !fullText.trim()) {
-    mom.notes = "Meeting was too short or no audio was recorded.";
+  const recordings = botData.recordings || [];
+  if (recordings.length === 0) {
+    console.error('No recordings found for bot');
+    mom.notes = "No audio/video recording was captured by the bot.";
     mom.title = "Empty Meeting";
+    mom.status = 'draft';
     await mom.save();
     return;
   }
 
+  const recordingId = recordings[0].id;
+  console.log(`Starting transcription for recording ID: ${recordingId}`);
+
   try {
-    // Use OpenAI to summarize
+    // 1. Trigger Post-Meeting Transcription
+    const createRes = await fetch(`${RECALL_API_BASE}/recording/${recordingId}/create_transcript/`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${RECALL_API_KEY}`,
+        'accept': 'application/json',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        provider: {
+          recallai_async: { language_code: "auto" }
+        },
+        diarization: {
+          use_separate_streams_when_available: true
+        }
+      })
+    });
+
+    let transcriptId = null;
+    if (createRes.ok) {
+      const createData = await createRes.json();
+      transcriptId = createData.id;
+    } else {
+      console.error(`Recall API /recording/${recordingId}/create_transcript failed:`, await createRes.text());
+    }
+
+    if (!transcriptId) {
+      console.error('Failed to trigger post-meeting transcription');
+      mom.title = "Transcription Failed";
+      mom.notes = "Could not trigger transcription. The API limit may have been reached for this recording.";
+      mom.status = 'draft';
+      await mom.save();
+      return;
+    }
+
+    mom.title = "AI Meeting Notes (Transcribing...)";
+    await mom.save();
+
+    // 2. Poll for Transcript completion (up to 3 minutes)
+    let transcriptData = null;
+    for (let i = 0; i < 36; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5000)); // wait 5 seconds
+      
+      const checkRes = await fetch(`${RECALL_API_BASE}/transcript/${transcriptId}/`, {
+        headers: {
+          'Authorization': `Token ${RECALL_API_KEY}`,
+          'accept': 'application/json'
+        }
+      });
+      
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        console.log(`Transcript status check ${i+1}/36:`, checkData.status);
+        if (checkData.status === 'done' || checkData.status === 'completed') {
+          transcriptData = checkData;
+          break;
+        } else if (checkData.status === 'failed' || checkData.status === 'error') {
+          console.error('Transcription failed:', checkData);
+          break;
+        }
+      } else {
+        console.error(`Transcript check failed (${checkRes.status}):`, await checkRes.text());
+      }
+    }
+
+    if (!transcriptData) {
+      mom.notes = "Transcription timed out or failed to process audio.";
+      mom.title = "Empty Meeting";
+      mom.status = 'draft';
+      await mom.save();
+      return;
+    }
+
+    let fullText = "";
+    if (transcriptData.utterances) {
+      fullText = transcriptData.utterances.map((u: any) => u.text || u.words?.map((w:any)=>w.text).join('')).join('\n');
+    } else if (transcriptData.words) {
+      fullText = transcriptData.words.map((w: any) => w.text).join(' ');
+    } else if (Array.isArray(transcriptData)) {
+       fullText = transcriptData.map((u: any) => u.text || u.words?.map((w:any)=>w.text).join('')).join('\n');
+    }
+
+    if (!fullText || !fullText.trim()) {
+      mom.notes = "Meeting was too short or no audio was recorded. " + JSON.stringify(transcriptData);
+      mom.title = "Empty Meeting";
+      mom.status = 'draft';
+      await mom.save();
+      return;
+    }
+
+    // 3. Use OpenAI to summarize
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const completion = await openai.chat.completions.create({
@@ -150,10 +228,11 @@ export async function processRecallWebhook(payload: any) {
       mom.actionItems = parsed.actionItems || [];
     }
   } catch (err) {
-    console.error('OpenAI parsing error:', err);
-    mom.notes = fullText; // fallback to raw transcript
+    console.error('Post-meeting transcription error:', err);
+    mom.notes = "Error processing transcript. The bot may have failed to record audio."; 
   }
 
+  mom.status = 'draft';
   await mom.save();
 
   // Note: For real-time sync, you could broadcast via Redis so frontend updates instantly.

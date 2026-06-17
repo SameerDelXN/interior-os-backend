@@ -46,10 +46,11 @@ async function syncBotHandler(req: NextRequest, context: { params: Promise<Recor
       // Manually trigger the webhook logic since localhost can't receive external webhooks
       // Ensure we pass the extracted status to the mock webhook payload
       botData.status = 'done';
-      await processRecallWebhook({
+      // Fire and forget so we don't block the API response
+      processRecallWebhook({
         event: 'bot.status_change',
         data: botData
-      });
+      }).catch(err => console.error('Background transcription error:', err));
       return successResponse(null, 'Meeting ended! Processing transcript and AI summary...');
     }
 
