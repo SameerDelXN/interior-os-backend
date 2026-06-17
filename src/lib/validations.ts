@@ -75,7 +75,8 @@ export const resetPasswordSchema = z.object({
 });
 
 export const verifyEmailSchema = z.object({
-  token: z.string().min(1, 'Verification token is required'),
+  email: z.string().email('Invalid email address').trim().toLowerCase(),
+  otp: z.string().length(6, 'OTP must be exactly 6 digits').regex(/^\d+$/, 'OTP must contain only numbers'),
 });
 
 export const refreshTokenSchema = z.object({

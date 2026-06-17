@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       return validationErrorResponse(errors);
     }
 
-    const result = await verifyEmail(validation.data.token);
+    const result = await verifyEmail(validation.data.email, validation.data.otp);
     return successResponse(result);
   } catch (error) {
     if (error instanceof AppError) {

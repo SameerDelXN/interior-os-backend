@@ -5,7 +5,7 @@
 import { connectDB } from '@/lib/db';
 import { User, Organization, Role, RefreshToken, DEFAULT_ROLES } from '@/models';
 import { generateTokenPair, generateRandomToken, getRefreshTokenExpiry } from '@/lib/jwt';
-import { sendEmail, verificationEmailTemplate, resetPasswordEmailTemplate } from '@/lib/email';
+import { sendEmail, verificationEmailTemplate, resetPasswordEmailTemplate, otpEmailTemplate } from '@/lib/email';
 import { env } from '@/config/env';
 import type { SignupInput, LoginInput } from '@/lib/validations';
 
@@ -55,8 +55,8 @@ export async function signup(input: SignupInput) {
     });
   }
 
-  // Generate email verification token
-  const emailVerificationToken = generateRandomToken();
+  // Generate 6-digit email verification OTP
+  const emailVerificationOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
   // Create admin user
   const user = await User.create({
@@ -70,50 +70,25 @@ export async function signup(input: SignupInput) {
     systemRole: 'org_admin',
     status: 'pending',
     isEmailVerified: false,
-    emailVerificationToken,
-    emailVerificationExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+    emailVerificationToken: emailVerificationOtp,
+    emailVerificationExpiry: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes for OTP
   });
 
   // Update org with createdBy
   organization.createdBy = user._id;
   await organization.save();
 
-  // Send verification email
-  const verificationUrl = `${env.FRONTEND_URL}/verify-email?token=${emailVerificationToken}`;
+  // Send OTP verification email
   await sendEmail({
     to: user.email,
     subject: 'Verify your InteriorOS account',
-    html: verificationEmailTemplate(user.firstName, verificationUrl),
+    html: otpEmailTemplate(user.firstName, emailVerificationOtp),
   });
 
-  // Generate tokens
-  const tokens = generateTokenPair(user);
-  await RefreshToken.create({
-    userId: user._id,
-    token: tokens.refreshToken,
-    expiresAt: getRefreshTokenExpiry(),
-  });
-
+  // DO NOT issue tokens here. User must verify OTP first.
   return {
-    user: {
-      id: user._id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      systemRole: user.systemRole,
-      status: user.status,
-      isEmailVerified: user.isEmailVerified,
-    },
-    organization: {
-      id: organization._id,
-      name: organization.name,
-      slug: organization.slug,
-    },
-    tokens: {
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresAt: tokens.accessTokenExpiry,
-    },
+    email: user.email,
+    message: 'OTP sent successfully. Please check your email.',
   };
 }
 
@@ -287,27 +262,71 @@ export async function resetPassword(token: string, newPassword: string) {
 
 // ── Verify Email ─────────────────────────────────────────────────────────────
 
-export async function verifyEmail(token: string) {
+export async function verifyEmail(email: string, otp: string) {
   await connectDB();
 
   const user = await User.findOne({
-    emailVerificationToken: token,
+    email: email.toLowerCase(),
+    emailVerificationToken: otp,
     emailVerificationExpiry: { $gt: new Date() },
   }).select('+emailVerificationToken +emailVerificationExpiry');
 
   if (!user) {
-    throw new AppError('Invalid or expired verification token', 400);
+    throw new AppError('Invalid or expired OTP', 400);
   }
 
   user.isEmailVerified = true;
   user.emailVerificationToken = undefined;
   user.emailVerificationExpiry = undefined;
+  
   if (user.status === 'pending') {
     user.status = 'active';
   }
+  
+  user.lastLoginAt = new Date();
   await user.save();
 
-  return { message: 'Email verified successfully.' };
+  // Get organization
+  const organization = await Organization.findById(user.organizationId);
+
+  // Generate tokens now that the user is verified
+  const tokens = generateTokenPair(user);
+
+  // Store refresh token
+  await RefreshToken.create({
+    userId: user._id,
+    token: tokens.refreshToken,
+    expiresAt: getRefreshTokenExpiry(),
+  });
+
+  return {
+    user: {
+      id: user._id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      avatar: user.avatar,
+      systemRole: user.systemRole,
+      status: user.status,
+      isEmailVerified: user.isEmailVerified,
+      designation: user.designation,
+      department: user.department,
+    },
+    organization: organization
+      ? {
+          id: organization._id,
+          name: organization.name,
+          slug: organization.slug,
+          logo: organization.logo,
+        }
+      : null,
+    tokens: {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.accessTokenExpiry,
+    },
+    message: 'Email verified successfully.',
+  };
 }
 
 // ── Logout ───────────────────────────────────────────────────────────────────

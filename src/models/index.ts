@@ -98,4 +98,5 @@ export type { IProjectFile } from './project-file.model';
 export { ProjectTransaction } from './project-transaction.model';
 export type { IProjectTransaction } from './project-transaction.model';
 
-
+export { Message } from './message.model';
+export type { IMessage } from './message.model';

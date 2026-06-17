@@ -33,6 +33,6 @@ export async function POST(req: NextRequest) {
       return errorResponse(error.message, error.statusCode);
     }
     console.error('Login error:', error);
-    return serverErrorResponse();
+    return new Response(JSON.stringify({ error: String(error), stack: (error as Error).stack }), { status: 500 });
   }
 }
