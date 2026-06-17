@@ -19,6 +19,7 @@
     "mongoose": "^9.6.3",
     "next": "16.2.7",
     "nodemailer": "^8.0.10",
+    "openai": "^6.43.0",
     "razorpay": "^2.9.6",
     "uuid": "^14.0.0",
     "winston": "^3.19.0",

@@ -21,6 +21,9 @@ export interface IMeetingMinutes extends Document {
   agenda: string;
   notes: string;
   actionItems: IMOMActionItem[];
+  status: 'draft' | 'published';
+  botId?: string;
+  meetingUrl?: string;
   isDeleted: boolean;
   deletedAt?: Date;
   createdAt: Date;
@@ -48,6 +51,13 @@ const MeetingMinutesSchema = new Schema<IMeetingMinutes>(
         },
       },
     ],
+    status: {
+      type: String,
+      enum: ['draft', 'published'],
+      default: 'published',
+    },
+    botId: { type: String, index: true },
+    meetingUrl: String,
     isDeleted: { type: Boolean, default: false, index: true },
     deletedAt: Date,
   },
@@ -69,6 +79,11 @@ MeetingMinutesSchema.pre('findOne', function () {
     this.where({ isDeleted: false });
   }
 });
+
+// Delete existing model in development to ensure schema updates take effect
+if (process.env.NODE_ENV !== 'production' && mongoose.models.MeetingMinutes) {
+  delete mongoose.models.MeetingMinutes;
+}
 
 export const MeetingMinutes: Model<IMeetingMinutes> = mongoose.models.MeetingMinutes || mongoose.model<IMeetingMinutes>('MeetingMinutes', MeetingMinutesSchema);
 export default MeetingMinutes;
