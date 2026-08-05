@@ -67,8 +67,8 @@ async function convertCustomerHandler(
         currency: 'INR',
       },
       location: {
-        address: customer.propertyAddress || customer.address || '',
-        city: customer.city || '',
+        address: customer.propertyAddress || customer.address || customer.projectLocation || '',
+        city: customer.city || customer.projectLocation || customer.propertyAddress || customer.address || '',
         state: customer.state || '',
         country: 'India',
         zipCode: customer.pincode || '',

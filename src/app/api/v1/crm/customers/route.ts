@@ -79,9 +79,27 @@ async function createCustomerHandler(req: NextRequest, _context: any, auth: JwtP
       return errorResponse(validation.error.issues[0].message, 400);
     }
 
-    // Auto-generate Lead Number (e.g. LD-1001), scoped to organization
-    const count = await CrmCustomer.countDocuments({ organizationId });
-    const leadNumber = `LD-${1001 + count}`;
+    // Auto-generate unique Lead Number (e.g. LD-1001), ensuring no duplicate key collisions
+    const totalCount = await CrmCustomer.countDocuments({});
+    const lastCustomer = await CrmCustomer.findOne({}, { leadNumber: 1 })
+      .sort({ createdAt: -1, _id: -1 })
+      .lean();
+
+    let nextNum = 1001 + totalCount;
+    if (lastCustomer && lastCustomer.leadNumber) {
+      const match = lastCustomer.leadNumber.match(/LD-(\d+)/);
+      if (match && match[1]) {
+        nextNum = Math.max(nextNum, parseInt(match[1], 10) + 1);
+      }
+    }
+
+    let leadNumber = `LD-${nextNum}`;
+    let attempts = 0;
+    while ((await CrmCustomer.exists({ leadNumber })) && attempts < 200) {
+      nextNum++;
+      leadNumber = `LD-${nextNum}`;
+      attempts++;
+    }
 
     const customer = new CrmCustomer({
       ...validation.data,

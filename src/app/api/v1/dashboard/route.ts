@@ -1,7 +1,3 @@
-// =============================================================================
-// InteriorOS Backend — Global Portfolio Dashboard API
-// =============================================================================
-
 import { NextRequest } from 'next/server';
 import { withAuth, getOrganizationId } from '@/middlewares/auth.middleware';
 import { connectDB } from '@/lib/db';
@@ -13,6 +9,7 @@ import { Snag } from '@/models/snag.model';
 import { RFI } from '@/models/rfi.model';
 import { Risk } from '@/models/risk.model';
 import { PurchaseOrder } from '@/models/purchase-order.model';
+import { CrmCustomer } from '@/models/crm-customer.model';
 import { calculateProjectMetrics } from '@/services/project-metrics.service';
 import { successResponse, serverErrorResponse } from '@/lib/api-response';
 import type { JwtPayload } from '@/lib/jwt';
@@ -35,7 +32,23 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
       projectFilter._id = { $in: projectIds };
     }
 
-    // 1. Projects and Basic Metrics
+    // 1. CRM Lead Metrics
+    const crmFilter = { organizationId };
+    const totalLeads = await CrmCustomer.countDocuments(crmFilter);
+    const newLeads = await CrmCustomer.countDocuments({ ...crmFilter, status: 'New Lead' });
+    const activeLeads = await CrmCustomer.countDocuments({ ...crmFilter, status: { $nin: ['Won', 'Lost'] } });
+    const wonLeads = await CrmCustomer.countDocuments({ ...crmFilter, status: 'Won' });
+
+    const leadsPipeline = [
+      { stage: 'New Leads', count: newLeads },
+      { stage: 'Follow-ups', count: await CrmCustomer.countDocuments({ ...crmFilter, status: 'Contacted' }) },
+      { stage: 'Site Visits', count: await CrmCustomer.countDocuments({ ...crmFilter, status: { $in: ['Meeting Scheduled', 'Measurement Done'] } }) },
+      { stage: 'Requirements', count: await CrmCustomer.countDocuments({ ...crmFilter, status: 'Requirement Completed' }) },
+      { stage: 'Quotations', count: await CrmCustomer.countDocuments({ ...crmFilter, status: 'Quotation Sent' }) },
+      { stage: 'Won Projects', count: wonLeads },
+    ];
+
+    // 2. Projects and Basic Metrics
     const allProjects = await Project.find(projectFilter);
     const totalProjectsCount = allProjects.length;
     const activeProjects = allProjects.filter(p => p.status === 'active');
@@ -224,6 +237,34 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
       });
     });
 
+    // Latest CRM Leads
+    const recentLeads = await CrmCustomer.find(crmFilter)
+      .sort({ updatedAt: -1 })
+      .limit(3);
+
+    recentLeads.forEach(lead => {
+      let action = `Lead "${lead.name}" (${lead.leadNumber || 'LD'}) is in ${lead.status}`;
+      let type = 'info';
+      if (lead.status === 'Won') {
+        action = `Lead "${lead.name}" converted (Won)`;
+        type = 'success';
+      } else if (lead.status === 'Quotation Sent') {
+        action = `Quotation sent to "${lead.name}"`;
+        type = 'warning';
+      } else if (lead.status === 'Measurement Done') {
+        action = `Site measurements completed for "${lead.name}"`;
+        type = 'info';
+      }
+      const t = lead.updatedAt || lead.createdAt || new Date();
+      recentActivities.push({
+        action,
+        project: lead.projectLocation || 'CRM Pipeline',
+        time: formatRelativeTime(t),
+        timestamp: t.getTime(),
+        type,
+      });
+    });
+
     // Sort recent activities by timestamp descending
     recentActivities.sort((a, b) => b.timestamp - a.timestamp);
     const finalActivities = recentActivities.slice(0, 6);
@@ -240,11 +281,16 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
       kpis: {
         activeProjects: activeProjectsCount,
         delayedProjects: delayedCount,
+        totalLeads,
+        newLeads,
+        activeLeads,
+        wonLeads,
         openSnags,
         openRFIs,
         criticalRisks,
         procurementPending,
       },
+      leadsPipeline,
       progressTrend: progressTrendData,
       projectHealth: [
         { name: 'On Track', value: onTrackCount, color: 'hsl(142.1, 76.2%, 36.3%)' },
