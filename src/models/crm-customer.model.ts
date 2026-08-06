@@ -163,7 +163,7 @@ const CrmCustomerSchema = new Schema<ICrmCustomer>(
       required: [true, 'Organization is required'],
       index: true,
     },
-    leadNumber: { type: String, unique: true, index: true },
+    leadNumber: { type: String, index: true },
     leadSource: {
       type: String,
       enum: [
@@ -243,6 +243,8 @@ const CrmCustomerSchema = new Schema<ICrmCustomer>(
     toObject: { virtuals: true },
   }
 );
+
+CrmCustomerSchema.index({ organizationId: 1, leadNumber: 1 }, { unique: true });
 
 export const CrmCustomer: Model<ICrmCustomer> =
   mongoose.models.CrmCustomer || mongoose.model<ICrmCustomer>('CrmCustomer', CrmCustomerSchema);
