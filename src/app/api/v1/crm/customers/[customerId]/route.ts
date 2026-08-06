@@ -64,3 +64,36 @@ async function updateCustomerHandler(
 }
 
 export const PATCH = withAuth(updateCustomerHandler);
+
+// DELETE: Delete a Customer Lead
+async function deleteCustomerHandler(
+  req: NextRequest,
+  context: { params: Promise<Record<string, string>> },
+  auth: JwtPayload
+) {
+  try {
+    await connectDB();
+    const organizationId = getOrganizationId(auth);
+    const { customerId } = await context.params;
+
+    if (!mongoose.Types.ObjectId.isValid(customerId)) {
+      return errorResponse('Invalid Customer ID', 400);
+    }
+
+    const customer = await CrmCustomer.findOneAndDelete({ _id: customerId, organizationId });
+
+    if (!customer) {
+      return errorResponse('Customer not found', 404);
+    }
+
+    // Delete related activities
+    await CrmActivity.deleteMany({ customer: customerId, organizationId });
+
+    return successResponse(null, 'Customer lead deleted successfully');
+  } catch (error: any) {
+    console.error('Delete CRM customer error:', error);
+    return serverErrorResponse();
+  }
+}
+
+export const DELETE = withAuth(deleteCustomerHandler);
