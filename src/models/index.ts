@@ -100,3 +100,6 @@ export type { IProjectTransaction } from './project-transaction.model';
 
 export { Message } from './message.model';
 export type { IMessage } from './message.model';
+
+export { Payment } from './payment.model';
+export type { IPayment, PaymentType, PaymentMethod } from './payment.model';

@@ -40,6 +40,43 @@ async function getLeadDetailsHandler(req: NextRequest, context: { params: Promis
   }
 }
 
+import { z } from 'zod';
+
+const updateLeadSchema = z.object({
+  leadName: z
+    .string()
+    .trim()
+    .min(2, 'Lead name must be at least 2 characters')
+    .refine((val) => !/\d/.test(val), 'Lead name cannot contain numbers')
+    .refine((val) => /^[a-zA-Z\s'.-]+$/.test(val), 'Lead name can only contain letters, spaces, hyphens, and dots')
+    .optional(),
+  phone: z
+    .string()
+    .trim()
+    .refine((val) => {
+      if (!val) return true;
+      return !/[a-zA-Z]/.test(val);
+    }, 'Phone number cannot contain letters')
+    .refine((val) => {
+      if (!val) return true;
+      const digitsOnly = val.replace(/\D/g, '');
+      return digitsOnly.length >= 10 && digitsOnly.length <= 15;
+    }, 'Please enter a valid phone number (10 to 15 digits)')
+    .optional(),
+  email: z.string().trim().email('Valid email is required').optional().or(z.literal('')),
+  projectType: z.enum(['Commercial Office', 'Residential', 'Tech Office', 'General']).optional(),
+  budget: z.number().nonnegative().optional(),
+  location: z.string().optional(),
+  propertyType: z.string().optional(),
+  source: z.enum(['website', 'meta_ads', 'google_ads', 'justdial', 'indiamart', 'referrals', 'walk_in', 'architects', 'other']).optional(),
+  stage: z.string().optional(),
+  urgency: z.enum(['low', 'medium', 'high']).optional(),
+  assignedDesigner: z.string().optional(),
+  assignedSalesPerson: z.string().optional(),
+  siteVisit: z.any().optional(),
+  requirements: z.any().optional(),
+});
+
 // PUT: Update lead details
 async function updateLeadHandler(req: NextRequest, context: { params: Promise<Record<string, string>> }, auth: JwtPayload) {
   try {
@@ -50,6 +87,11 @@ async function updateLeadHandler(req: NextRequest, context: { params: Promise<Re
 
     if (!mongoose.Types.ObjectId.isValid(leadId)) {
       return errorResponse('Invalid Lead ID', 400);
+    }
+
+    const validation = updateLeadSchema.safeParse(body);
+    if (!validation.success) {
+      return errorResponse(validation.error.issues[0].message, 400);
     }
 
     const lead = await CRMLead.findOne({

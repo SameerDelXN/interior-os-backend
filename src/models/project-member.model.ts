@@ -29,7 +29,7 @@ const MemberPermissionSchema = new Schema(
         'vendors', 'drawings', 'rfis', 'mom', 'risks', 'snags',
         'ncrs', 'utilities', 'photos', 'handover', 'boq', 'change_requests', 'variation_orders', 'users',
         'roles', 'organization', 'reports', 'notifications',
-        'settings', 'audit_logs', 'filemgt',
+        'settings', 'audit_logs', 'filemgt', 'financials',
       ],
     },
     actions: [{

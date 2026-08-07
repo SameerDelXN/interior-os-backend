@@ -12,9 +12,22 @@ import type { JwtPayload } from '@/lib/jwt';
 import { z } from 'zod';
 
 const createLeadSchema = z.object({
-  leadName: z.string().min(1, 'Lead name is required').max(100),
-  phone: z.string().min(1, 'Phone number is required').max(20),
-  email: z.string().email('Valid email is required'),
+  leadName: z
+    .string()
+    .trim()
+    .min(2, 'Lead name must be at least 2 characters')
+    .max(100)
+    .refine((val) => !/\d/.test(val), 'Lead name cannot contain numbers')
+    .refine((val) => /^[a-zA-Z\s'.-]+$/.test(val), 'Lead name can only contain letters, spaces, hyphens, and dots'),
+  phone: z
+    .string()
+    .trim()
+    .refine((val) => !/[a-zA-Z]/.test(val), 'Phone number cannot contain letters')
+    .refine((val) => {
+      const digitsOnly = val.replace(/\D/g, '');
+      return digitsOnly.length >= 10 && digitsOnly.length <= 15;
+    }, 'Please enter a valid phone number (10 to 15 digits)'),
+  email: z.string().trim().email('Valid email is required'),
   projectType: z.enum(['Commercial Office', 'Residential', 'Tech Office', 'General']).default('General'),
   budget: z.number().nonnegative().default(0),
   location: z.string().optional().default(''),

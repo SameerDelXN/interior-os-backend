@@ -24,10 +24,31 @@ const createCustomerSchema = z.object({
       'Other',
     ])
     .optional(),
-  name: z.string().min(1, 'Please provide customer name'),
-  mobileNumber: z.string().min(1, 'Please provide mobile number'),
-  alternateNumber: z.string().optional(),
-  email: z.string().optional(),
+  name: z
+    .string()
+    .trim()
+    .min(2, 'Name must be at least 2 characters long')
+    .refine((val) => !/\d/.test(val), 'Full name cannot contain numbers')
+    .refine((val) => /^[a-zA-Z\s'.-]+$/.test(val), 'Full name can only contain letters, spaces, hyphens, and dots'),
+  mobileNumber: z
+    .string()
+    .trim()
+    .refine((val) => !/[a-zA-Z]/.test(val), 'Mobile number cannot contain letters')
+    .refine((val) => {
+      const digitsOnly = val.replace(/\D/g, '');
+      return digitsOnly.length >= 10 && digitsOnly.length <= 15;
+    }, 'Please enter a valid mobile number (10 to 15 digits)'),
+  alternateNumber: z
+    .string()
+    .trim()
+    .refine((val) => {
+      if (!val) return true;
+      const digitsOnly = val.replace(/\D/g, '');
+      return digitsOnly.length >= 10 && digitsOnly.length <= 15;
+    }, 'Invalid alternate number')
+    .optional()
+    .or(z.literal('')),
+  email: z.string().trim().email('Please enter a valid email address').optional().or(z.literal('')),
   address: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),

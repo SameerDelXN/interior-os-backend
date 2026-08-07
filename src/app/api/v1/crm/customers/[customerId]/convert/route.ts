@@ -11,6 +11,13 @@ import { successResponse, errorResponse, serverErrorResponse } from '@/lib/api-r
 import type { JwtPayload } from '@/lib/jwt';
 import mongoose from 'mongoose';
 
+import { z } from 'zod';
+
+const convertCustomerSchema = z.object({
+  startDate: z.coerce.date().optional(),
+  remarks: z.string().optional(),
+});
+
 async function convertCustomerHandler(
   req: NextRequest,
   context: { params: Promise<Record<string, string>> },
@@ -20,12 +27,18 @@ async function convertCustomerHandler(
     await connectDB();
     const organizationId = getOrganizationId(auth);
     const { customerId } = await context.params;
-    const body = await req.json().catch(() => ({}));
-    const { startDate, remarks } = body as { startDate?: string; remarks?: string };
+    const rawBody = await req.json().catch(() => ({}));
 
     if (!mongoose.Types.ObjectId.isValid(customerId)) {
       return errorResponse('Invalid Customer ID', 400);
     }
+
+    const validation = convertCustomerSchema.safeParse(rawBody);
+    if (!validation.success) {
+      return errorResponse(validation.error.issues[0].message, 400);
+    }
+
+    const { startDate, remarks } = validation.data;
 
     const customer = await CrmCustomer.findOne({ _id: customerId, organizationId });
 

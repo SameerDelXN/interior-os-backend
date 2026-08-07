@@ -38,6 +38,7 @@ export const PROJECT_MODULES: { module: ModuleName; label: string }[] = [
   { module: 'handover', label: 'Handover' },
   { module: 'users', label: 'Team / Members' },
   { module: 'filemgt', label: 'File Management' },
+  { module: 'financials', label: 'Payments & Financials' },
 ];
 
 // ── Default permission presets per project role ──────────────────────────────
@@ -74,6 +75,7 @@ export const DEFAULT_PROJECT_PERMISSIONS: Record<ProjectRole, IPermission[]> = {
     perm('handover', full),
     perm('users', full),
     perm('filemgt', full),
+    perm('financials', full),
   ],
 
   // ── Site Engineer: Field-focused CRUD + own tasks ──
@@ -98,6 +100,7 @@ export const DEFAULT_PROJECT_PERMISSIONS: Record<ProjectRole, IPermission[]> = {
     perm('handover', readOnly),
     perm('users', readOnly),
     perm('filemgt', crud),
+    perm('financials', readOnly),
   ],
 
   // ── Quantity Surveyor: Procurement/POs/Utilities focused ──
@@ -121,6 +124,7 @@ export const DEFAULT_PROJECT_PERMISSIONS: Record<ProjectRole, IPermission[]> = {
     perm('photos', readOnly),
     perm('handover', readOnly),
     perm('filemgt', crud),
+    perm('financials', crud),
   ],
 
   // ── Designer: Drawings/RFIs/Photos focused ──
@@ -138,6 +142,7 @@ export const DEFAULT_PROJECT_PERMISSIONS: Record<ProjectRole, IPermission[]> = {
     perm('photos', crud),
     perm('handover', readOnly),
     perm('filemgt', crud),
+    perm('financials', readOnly),
   ],
 
   // ── Sub Contractor: Own tasks + limited read ──
@@ -153,6 +158,7 @@ export const DEFAULT_PROJECT_PERMISSIONS: Record<ProjectRole, IPermission[]> = {
     perm('ncrs', readOnly),
     perm('photos', readOnly),
     perm('filemgt', readOnly),
+    perm('financials', readOnly),
   ],
 
   // ── Client Representative: Read-heavy + project config read ──
@@ -176,6 +182,7 @@ export const DEFAULT_PROJECT_PERMISSIONS: Record<ProjectRole, IPermission[]> = {
     perm('photos', readOnly),
     perm('handover', readOnly),
     perm('filemgt', readOnly),
+    perm('financials', readOnly),
   ],
 
   // ── Viewer: Read-only everywhere ──
@@ -199,6 +206,7 @@ export const DEFAULT_PROJECT_PERMISSIONS: Record<ProjectRole, IPermission[]> = {
     perm('photos', readOnly),
     perm('handover', readOnly),
     perm('filemgt', readOnly),
+    perm('financials', readOnly),
   ],
 };
 

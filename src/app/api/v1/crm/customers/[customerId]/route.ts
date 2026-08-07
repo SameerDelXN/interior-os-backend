@@ -10,6 +10,44 @@ import { CrmActivity } from '@/models/crm-activity.model';
 import { successResponse, errorResponse, serverErrorResponse } from '@/lib/api-response';
 import type { JwtPayload } from '@/lib/jwt';
 import mongoose from 'mongoose';
+import { z } from 'zod';
+
+const updateCustomerSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, 'Name must be at least 2 characters long')
+    .refine((val) => !/\d/.test(val), 'Full name cannot contain numbers')
+    .refine((val) => /^[a-zA-Z\s'.-]+$/.test(val), 'Full name can only contain letters, spaces, hyphens, and dots')
+    .optional(),
+  mobileNumber: z
+    .string()
+    .trim()
+    .refine((val) => {
+      if (!val) return true;
+      return !/[a-zA-Z]/.test(val);
+    }, 'Mobile number cannot contain letters')
+    .refine((val) => {
+      if (!val) return true;
+      const digitsOnly = val.replace(/\D/g, '');
+      return digitsOnly.length >= 10 && digitsOnly.length <= 15;
+    }, 'Please enter a valid mobile number (10 to 15 digits)')
+    .optional(),
+  email: z.string().trim().email('Please enter a valid email address').optional().or(z.literal('')),
+  leadSource: z.string().optional(),
+  propertyType: z.string().optional(),
+  projectLocation: z.string().optional(),
+  budgetRange: z.string().optional(),
+  status: z.string().optional(),
+  assignedSalesExecutive: z.string().optional(),
+  designerAssigned: z.string().optional(),
+  siteMeasurements: z.any().optional(),
+  sitePhotos: z.array(z.string()).optional(),
+  requirements: z.any().optional(),
+  designs: z.array(z.any()).optional(),
+  quotations: z.array(z.any()).optional(),
+  remarks: z.string().optional(),
+});
 
 // PATCH: Update a Customer (e.g. Status change)
 async function updateCustomerHandler(
@@ -27,9 +65,14 @@ async function updateCustomerHandler(
       return errorResponse('Invalid Customer ID', 400);
     }
 
+    const validation = updateCustomerSchema.safeParse(data);
+    if (!validation.success) {
+      return errorResponse(validation.error.issues[0].message, 400);
+    }
+
     const customer = await CrmCustomer.findOneAndUpdate(
       { _id: customerId, organizationId },
-      { $set: data },
+      { $set: validation.data },
       { new: true }
     );
 

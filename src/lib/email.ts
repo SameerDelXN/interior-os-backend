@@ -130,3 +130,143 @@ export function otpEmailTemplate(name: string, otp: string): string {
     </div>
   `;
 }
+
+export function quotationInvoiceEmailTemplate(
+  customerName: string,
+  quotation: {
+    version: number;
+    quotationNumber?: string;
+    items: Array<{ description: string; quantity: number; unitPrice: number; total: number }>;
+    subtotal: number;
+    taxPercentage: number;
+    tax: number;
+    discount: number;
+    grandTotal: number;
+    notes?: string;
+    createdAt?: Date | string;
+  },
+  companyName: string = 'InteriorOS'
+): string {
+  const formattedItems = (quotation.items || []).map((item, idx) => `
+    <tr style="border-bottom: 1px solid #f1f5f9;">
+      <td style="padding: 12px; font-size: 13px; color: #334155; text-align: center;">${idx + 1}</td>
+      <td style="padding: 12px; font-size: 13px; color: #0f172a; font-weight: 500;">${item.description}</td>
+      <td style="padding: 12px; font-size: 13px; color: #334155; text-align: center;">${item.quantity}</td>
+      <td style="padding: 12px; font-size: 13px; color: #334155; text-align: right;">₹${(item.unitPrice || 0).toLocaleString('en-IN')}</td>
+      <td style="padding: 12px; font-size: 13px; color: #0f172a; font-weight: 600; text-align: right;">₹${((item.total || (item.quantity * item.unitPrice)) || 0).toLocaleString('en-IN')}</td>
+    </tr>
+  `).join('');
+
+  const qtnNum = quotation.quotationNumber || `QTN-V${quotation.version}`;
+  const dateStr = new Date(quotation.createdAt || Date.now()).toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric'
+  });
+
+  return `
+    <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 650px; margin: 0 auto; padding: 24px; background-color: #f8fafc;">
+      <!-- Main Container Card -->
+      <div style="background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05);">
+        
+        <!-- Header Banner -->
+        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 32px; color: #ffffff;">
+          <table width="100%" border="0" cellspacing="0" cellpadding="0">
+            <tr>
+              <td>
+                <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: #ffffff;">${companyName}</h1>
+                <p style="margin: 4px 0 0; font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Proforma Invoice & Quotation</p>
+              </td>
+              <td align="right" valign="top">
+                <span style="display: inline-block; background-color: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; color: #38bdf8;">
+                  ${qtnNum}
+                </span>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- Details Section -->
+        <div style="padding: 24px 32px 16px; background-color: #ffffff;">
+          <table width="100%" border="0" cellspacing="0" cellpadding="0">
+            <tr>
+              <td valign="top" width="50%">
+                <p style="margin: 0; font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.5px;">Billed To</p>
+                <p style="margin: 4px 0 0; font-size: 15px; font-weight: 700; color: #0f172a;">${customerName}</p>
+              </td>
+              <td valign="top" width="50%" align="right">
+                <p style="margin: 0; font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.5px;">Quotation Date</p>
+                <p style="margin: 4px 0 0; font-size: 14px; font-weight: 600; color: #334155;">${dateStr}</p>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- Line Items Table -->
+        <div style="padding: 0 32px;">
+          <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-top: 8px;">
+            <thead>
+              <tr style="background-color: #f1f5f9; border-radius: 8px;">
+                <th style="padding: 10px 12px; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 700; text-align: center; border-top-left-radius: 8px;">#</th>
+                <th style="padding: 10px 12px; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 700; text-align: left;">Item Description</th>
+                <th style="padding: 10px 12px; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 700; text-align: center;">Qty</th>
+                <th style="padding: 10px 12px; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 700; text-align: right;">Unit Price</th>
+                <th style="padding: 10px 12px; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 700; text-align: right; border-top-right-radius: 8px;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${formattedItems}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Summary Totals -->
+        <div style="padding: 20px 32px 28px;">
+          <table width="100%" border="0" cellspacing="0" cellpadding="0">
+            <tr>
+              <td width="50%" valign="top">
+                ${quotation.notes ? `
+                  <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; margin-right: 16px;">
+                    <p style="margin: 0 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b;">Terms & Notes</p>
+                    <p style="margin: 0; font-size: 12px; color: #475569; line-height: 1.5;">${quotation.notes}</p>
+                  </div>
+                ` : ''}
+              </td>
+              <td width="50%" valign="top" align="right">
+                <table border="0" cellspacing="0" cellpadding="4" style="min-width: 220px;">
+                  <tr>
+                    <td style="font-size: 13px; color: #64748b;">Subtotal:</td>
+                    <td align="right" style="font-size: 13px; font-weight: 600; color: #334155;">₹${(quotation.subtotal || 0).toLocaleString('en-IN')}</td>
+                  </tr>
+                  ${quotation.taxPercentage ? `
+                    <tr>
+                      <td style="font-size: 13px; color: #64748b;">GST (${quotation.taxPercentage}%):</td>
+                      <td align="right" style="font-size: 13px; font-weight: 600; color: #334155;">₹${(quotation.tax || 0).toLocaleString('en-IN')}</td>
+                    </tr>
+                  ` : ''}
+                  ${quotation.discount ? `
+                    <tr>
+                      <td style="font-size: 13px; color: #059669;">Discount:</td>
+                      <td align="right" style="font-size: 13px; font-weight: 600; color: #059669;">-₹${(quotation.discount || 0).toLocaleString('en-IN')}</td>
+                    </tr>
+                  ` : ''}
+                  <tr style="border-top: 2px solid #e2e8f0;">
+                    <td style="padding-top: 8px; font-size: 15px; font-weight: 800; color: #0f172a;">Grand Total:</td>
+                    <td align="right" style="padding-top: 8px; font-size: 16px; font-weight: 800; color: #2563eb;">₹${(quotation.grandTotal || 0).toLocaleString('en-IN')}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- Footer -->
+        <div style="background-color: #f1f5f9; padding: 16px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
+          <p style="margin: 0; font-size: 12px; color: #64748b;">
+            Thank you for considering <strong>${companyName}</strong> for your interior fit-out needs!
+          </p>
+        </div>
+
+      </div>
+    </div>
+  `;
+}
+
