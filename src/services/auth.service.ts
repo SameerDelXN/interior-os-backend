@@ -217,16 +217,15 @@ export async function forgotPassword(email: string) {
     return { message: 'If an account exists, a reset email has been sent.' };
   }
 
-  const resetToken = generateRandomToken();
-  user.passwordResetToken = resetToken;
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  user.passwordResetToken = otp;
   user.passwordResetExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
   await user.save();
 
-  const resetUrl = `${env.FRONTEND_URL}/reset-password?token=${resetToken}`;
   await sendEmail({
     to: user.email,
     subject: 'Reset your InteriorOS password',
-    html: resetPasswordEmailTemplate(user.firstName, resetUrl),
+    html: resetPasswordEmailTemplate(user.firstName, otp),
   });
 
   return { message: 'If an account exists, a reset email has been sent.' };
@@ -234,16 +233,17 @@ export async function forgotPassword(email: string) {
 
 // ── Reset Password ───────────────────────────────────────────────────────────
 
-export async function resetPassword(token: string, newPassword: string) {
+export async function resetPassword(email: string, otp: string, newPassword: string) {
   await connectDB();
 
   const user = await User.findOne({
-    passwordResetToken: token,
+    email,
+    passwordResetToken: otp,
     passwordResetExpiry: { $gt: new Date() },
   }).select('+passwordResetToken +passwordResetExpiry +password');
 
   if (!user) {
-    throw new AppError('Invalid or expired reset token', 400);
+    throw new AppError('Invalid or expired OTP', 400);
   }
 
   user.password = newPassword;

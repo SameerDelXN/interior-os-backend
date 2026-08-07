@@ -68,20 +68,20 @@ export function verificationEmailTemplate(name: string, verificationUrl: string)
   `;
 }
 
-export function resetPasswordEmailTemplate(name: string, resetUrl: string): string {
+export function resetPasswordEmailTemplate(name: string, otp: string): string {
   return `
     <div style="font-family: 'Inter', -apple-system, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
       <div style="text-align: center; margin-bottom: 32px;">
         <h1 style="font-size: 24px; font-weight: 700; color: #0f172a; margin: 0;">InteriorOS</h1>
       </div>
-      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px;">
+      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px; text-align: center;">
         <h2 style="font-size: 20px; font-weight: 600; color: #0f172a; margin: 0 0 16px;">Reset your password</h2>
         <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
-          Hi ${name}, we received a request to reset your password. Click the button below to set a new password.
+          Hi ${name}, we received a request to reset your password. Use the following OTP to set a new password.
         </p>
-        <a href="${resetUrl}" style="display: inline-block; background: #0f172a; color: #ffffff; font-size: 14px; font-weight: 500; padding: 12px 24px; border-radius: 8px; text-decoration: none;">
-          Reset Password
-        </a>
+        <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+          <span style="font-family: monospace; font-size: 32px; font-weight: 700; color: #0f172a; letter-spacing: 6px;">${otp}</span>
+        </div>
         <p style="font-size: 12px; color: #94a3b8; margin: 24px 0 0; line-height: 1.5;">
           This link expires in 1 hour. If you didn't request a password reset, you can safely ignore this email.
         </p>

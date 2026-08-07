@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       return validationErrorResponse(errors);
     }
 
-    const result = await resetPassword(validation.data.token, validation.data.password);
+    const result = await resetPassword(validation.data.email, validation.data.otp, validation.data.newPassword);
     return successResponse(result);
   } catch (error) {
     if (error instanceof AppError) {
