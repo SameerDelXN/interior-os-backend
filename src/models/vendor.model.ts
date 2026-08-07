@@ -1,0 +1,74 @@
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface IVendor extends Document {
+  name: string;
+  contactPerson?: string;
+  email?: string;
+  phoneNumber?: string;
+  gstNumber?: string;
+  vendorCategory?: string;
+  bankDetails?: {
+    accountName?: string;
+    accountNumber?: string;
+    ifscCode?: string;
+    bankName?: string;
+  };
+  address?: string;
+  paymentTerms?: string;
+  organizationId: mongoose.Types.ObjectId;
+  status: string;
+}
+
+const VendorSchema = new Schema<IVendor>(
+  {
+    name: {
+      type: String,
+      required: [true, 'Please provide a vendor name'],
+      trim: true,
+    },
+    contactPerson: { type: String, trim: true },
+    email: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email'],
+    },
+    phoneNumber: { type: String, trim: true },
+    gstNumber: { type: String, trim: true },
+    vendorCategory: {
+      type: String,
+      enum: ['Raw Materials', 'Furniture', 'Electrical', 'Labour', 'Paint', 'Other'],
+      default: 'Other',
+    },
+    bankDetails: {
+      accountName: { type: String, trim: true },
+      accountNumber: { type: String, trim: true },
+      ifscCode: { type: String, trim: true },
+      bankName: { type: String, trim: true },
+    },
+    address: { type: String, trim: true },
+    paymentTerms: { type: String, trim: true, default: 'Standard' },
+    organizationId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Organization',
+      required: true,
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: ['Active', 'Inactive'],
+      default: 'Active',
+    },
+  },
+  {
+    timestamps: true,
+    toJSON: {
+      transform: function (doc, ret) {
+        delete ret.__v;
+        return ret;
+      },
+    },
+  }
+);
+
+export const Vendor = mongoose.models.Vendor || mongoose.model<IVendor>('Vendor', VendorSchema);
