@@ -64,7 +64,7 @@ async function updateNcrHandler(req: NextRequest, context: { params: Promise<Rec
     const { projectId } = await context.params;
     const body = await req.json();
 
-    const { ncrId, status, rootCause, correctiveAction } = body;
+    const { ncrId, status, rootCause, correctiveAction, description } = body;
     if (!ncrId) {
       return errorResponse('ncrId is required', 400);
     }
@@ -74,6 +74,7 @@ async function updateNcrHandler(req: NextRequest, context: { params: Promise<Rec
       return notFoundResponse('NCR not found');
     }
 
+    if (description) ncr.description = description;
     if (status) ncr.status = status;
     if (rootCause) ncr.rootCause = rootCause;
     if (correctiveAction) ncr.correctiveAction = correctiveAction;
@@ -89,3 +90,31 @@ async function updateNcrHandler(req: NextRequest, context: { params: Promise<Rec
 export const GET = withAuth(getNcrsHandler);
 export const POST = withAuth(createNcrHandler);
 export const PUT = withAuth(updateNcrHandler);
+
+// DELETE: Remove an NCR
+async function deleteNcrHandler(req: NextRequest, context: { params: Promise<Record<string, string>> }, auth: JwtPayload) {
+  try {
+    await connectDB();
+    const organizationId = getOrganizationId(auth);
+    const { projectId } = await context.params;
+    
+    const searchParams = req.nextUrl.searchParams;
+    const ncrId = searchParams.get('ncrId');
+
+    if (!ncrId) {
+      return errorResponse('ncrId is required', 400);
+    }
+
+    const ncr = await NCR.findOneAndDelete({ _id: ncrId, projectId, organizationId });
+    if (!ncr) {
+      return notFoundResponse('NCR not found');
+    }
+
+    return successResponse(null, 'NCR deleted successfully');
+  } catch (error) {
+    console.error('Delete NCR error:', error);
+    return serverErrorResponse();
+  }
+}
+
+export const DELETE = withAuth(deleteNcrHandler);

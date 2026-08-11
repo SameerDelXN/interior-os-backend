@@ -6,7 +6,7 @@ import { NextRequest } from 'next/server';
 import { withAuth, getOrganizationId } from '@/middlewares/auth.middleware';
 import { connectDB } from '@/lib/db';
 import { Risk } from '@/models/risk.model';
-import { successResponse, createdResponse, serverErrorResponse, errorResponse } from '@/lib/api-response';
+import { successResponse, createdResponse, serverErrorResponse, errorResponse, notFoundResponse } from '@/lib/api-response';
 import type { JwtPayload } from '@/lib/jwt';
 
 // GET: Retrieve all risks for the project
@@ -57,5 +57,71 @@ async function createRiskHandler(req: NextRequest, context: { params: Promise<Re
   }
 }
 
+// PUT: Update a risk
+async function updateRiskHandler(req: NextRequest, context: { params: Promise<Record<string, string>> }, auth: JwtPayload) {
+  try {
+    await connectDB();
+    const organizationId = getOrganizationId(auth);
+    const { projectId } = await context.params;
+    const body = await req.json();
+
+    const { riskId, description, category, probability, impact, mitigationPlan } = body;
+    if (!riskId) {
+      return errorResponse('riskId is required', 400);
+    }
+
+    const risk = await Risk.findOne({ _id: riskId, projectId, organizationId });
+    if (!risk) {
+      return notFoundResponse('Risk not found');
+    }
+
+    if (description) risk.description = description;
+    if (category) risk.category = category;
+    if (probability) risk.probability = probability;
+    if (impact) risk.impact = impact;
+    if (mitigationPlan !== undefined) risk.mitigationPlan = mitigationPlan;
+
+    if (probability || impact) {
+      const probScore = risk.probability === 'high' ? 3 : risk.probability === 'medium' ? 2 : 1;
+      const impScore = risk.impact === 'high' ? 3 : risk.impact === 'medium' ? 2 : 1;
+      risk.score = probScore * impScore;
+    }
+
+    await risk.save();
+    return successResponse(risk, 'Risk updated successfully');
+  } catch (error) {
+    console.error('Update risk error:', error);
+    return serverErrorResponse();
+  }
+}
+
+// DELETE: Remove a risk
+async function deleteRiskHandler(req: NextRequest, context: { params: Promise<Record<string, string>> }, auth: JwtPayload) {
+  try {
+    await connectDB();
+    const organizationId = getOrganizationId(auth);
+    const { projectId } = await context.params;
+    
+    const searchParams = req.nextUrl.searchParams;
+    const riskId = searchParams.get('riskId');
+
+    if (!riskId) {
+      return errorResponse('riskId is required', 400);
+    }
+
+    const risk = await Risk.findOneAndDelete({ _id: riskId, projectId, organizationId });
+    if (!risk) {
+      return notFoundResponse('Risk not found');
+    }
+
+    return successResponse(null, 'Risk deleted successfully');
+  } catch (error) {
+    console.error('Delete risk error:', error);
+    return serverErrorResponse();
+  }
+}
+
 export const GET = withAuth(getRisksHandler);
 export const POST = withAuth(createRiskHandler);
+export const PUT = withAuth(updateRiskHandler);
+export const DELETE = withAuth(deleteRiskHandler);
