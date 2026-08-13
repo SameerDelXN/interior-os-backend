@@ -9,6 +9,7 @@ import { connectDB } from '@/lib/db';
 import { User } from '@/models/user.model';
 import { ProjectMember } from '@/models/project-member.model';
 import { Project } from '@/models/project.model';
+import '@/models/role.model';
 import { successResponse, serverErrorResponse } from '@/lib/api-response';
 import type { JwtPayload } from '@/lib/jwt';
 
