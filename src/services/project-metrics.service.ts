@@ -76,7 +76,7 @@ export async function calculateProjectMetrics(
     }
 
     // 3. Tasks Progress Calculation (50% weight)
-    const tasks = await Task.find({ projectId: project._id, isDeleted: false }).select('status progress endDate');
+    const tasks = await Task.find({ projectId: project._id, isDeleted: false }).select('status progress endDate').lean();
     const totalTasks = tasks.length;
 
     let tasksProgress = 0;
@@ -87,7 +87,7 @@ export async function calculateProjectMetrics(
     }
 
     // 4. Milestones Progress Calculation (30% weight)
-    const milestones = await Milestone.find({ projectId: project._id, isDeleted: false }).select('status dueDate');
+    const milestones = await Milestone.find({ projectId: project._id, isDeleted: false }).select('status dueDate').lean();
     const totalMilestones = milestones.length;
 
     let milestonesProgress = 0;

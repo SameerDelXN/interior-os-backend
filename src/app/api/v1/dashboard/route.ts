@@ -32,24 +32,41 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
       projectFilter._id = { $in: projectIds };
     }
 
-    // 1. CRM Lead Metrics
+    // 1. CRM Lead Metrics — single aggregation instead of 6 separate counts
     const crmFilter = { organizationId };
-    const totalLeads = await CrmCustomer.countDocuments(crmFilter);
-    const newLeads = await CrmCustomer.countDocuments({ ...crmFilter, status: 'New Lead' });
-    const activeLeads = await CrmCustomer.countDocuments({ ...crmFilter, status: { $nin: ['Won', 'Lost'] } });
-    const wonLeads = await CrmCustomer.countDocuments({ ...crmFilter, status: 'Won' });
+    const [leadAgg] = await CrmCustomer.aggregate([
+      { $match: crmFilter },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          new: { $sum: { $cond: [{ $eq: ['$status', 'New Lead'] }, 1, 0] } },
+          won: { $sum: { $cond: [{ $eq: ['$status', 'Won'] }, 1, 0] } },
+          contacted: { $sum: { $cond: [{ $eq: ['$status', 'Contacted'] }, 1, 0] } },
+          meetingOrMeasured: { $sum: { $cond: [{ $in: ['$status', ['Meeting Scheduled', 'Measurement Done']] }, 1, 0] } },
+          reqCompleted: { $sum: { $cond: [{ $eq: ['$status', 'Requirement Completed'] }, 1, 0] } },
+          quotSent: { $sum: { $cond: [{ $eq: ['$status', 'Quotation Sent'] }, 1, 0] } },
+          lost: { $sum: { $cond: [{ $eq: ['$status', 'Lost'] }, 1, 0] } },
+        },
+      },
+    ]);
+    const lm = leadAgg || { total: 0, new: 0, won: 0, contacted: 0, meetingOrMeasured: 0, reqCompleted: 0, quotSent: 0, lost: 0 };
+    const totalLeads = lm.total;
+    const newLeads = lm.new;
+    const wonLeads = lm.won;
+    const activeLeads = lm.total - lm.won - lm.lost;
 
     const leadsPipeline = [
-      { stage: 'New Leads', count: newLeads },
-      { stage: 'Follow-ups', count: await CrmCustomer.countDocuments({ ...crmFilter, status: 'Contacted' }) },
-      { stage: 'Site Visits', count: await CrmCustomer.countDocuments({ ...crmFilter, status: { $in: ['Meeting Scheduled', 'Measurement Done'] } }) },
-      { stage: 'Requirements', count: await CrmCustomer.countDocuments({ ...crmFilter, status: 'Requirement Completed' }) },
-      { stage: 'Quotations', count: await CrmCustomer.countDocuments({ ...crmFilter, status: 'Quotation Sent' }) },
-      { stage: 'Won Projects', count: wonLeads },
+      { stage: 'New Leads', count: lm.new },
+      { stage: 'Follow-ups', count: lm.contacted },
+      { stage: 'Site Visits', count: lm.meetingOrMeasured },
+      { stage: 'Requirements', count: lm.reqCompleted },
+      { stage: 'Quotations', count: lm.quotSent },
+      { stage: 'Won Projects', count: lm.won },
     ];
 
     // 2. Projects and Basic Metrics
-    const allProjects = await Project.find(projectFilter);
+    const allProjects = await Project.find(projectFilter).lean();
     const totalProjectsCount = allProjects.length;
     const activeProjects = allProjects.filter(p => p.status === 'active');
     const activeProjectsCount = activeProjects.length;
@@ -60,11 +77,17 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
       scopeQuery.projectId = projectFilter._id;
     }
 
-    // 2. Count metrics from other tables (scoped to user's projects)
-    const openSnags = await Snag.countDocuments({ ...scopeQuery, status: { $in: ['open', 'assigned', 'in_progress'] } });
-    const openRFIs = await RFI.countDocuments({ ...scopeQuery, status: 'open' });
-    const criticalRisks = await Risk.countDocuments({ ...scopeQuery, status: 'open', score: { $gte: 6 } });
-    const procurementPending = await PurchaseOrder.countDocuments({ ...scopeQuery, status: 'pending' });
+    // 2b. Count metrics in parallel instead of sequential
+    const [openSnags, openRFIs, criticalRisks, procurementPending, procurementAgg] = await Promise.all([
+      Snag.countDocuments({ ...scopeQuery, status: { $in: ['open', 'assigned', 'in_progress'] } }),
+      RFI.countDocuments({ ...scopeQuery, status: 'open' }),
+      Risk.countDocuments({ ...scopeQuery, status: 'open', score: { $gte: 6 } }),
+      PurchaseOrder.countDocuments({ ...scopeQuery, status: 'pending' }),
+      PurchaseOrder.aggregate([
+        { $match: { organizationId: scopeQuery.organizationId, isDeleted: false, ...(scopeQuery.projectId ? { projectId: scopeQuery.projectId } : {}) } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+    ]);
 
     // 3. Project Health Evaluation
     let onTrackCount = 0;
@@ -101,84 +124,80 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
     // Sort top projects by progress descending and limit to 5
     topProjects.sort((a, b) => b.progress - a.progress);
     const limitedTopProjects = topProjects.slice(0, 5);
-    // 4. Procurement Stats
+    // 4. Procurement Stats — already fetched via aggregation above
     const poStatuses = ['pending', 'approved', 'ordered', 'delivered', 'rejected'] as const;
-    const procurementData = await Promise.all(
-      poStatuses.map(async (status) => {
-        const count = await PurchaseOrder.countDocuments({ ...scopeQuery, status });
-        return {
-          status: status.charAt(0).toUpperCase() + status.slice(1),
-          count,
-        };
-      })
-    );
+    const poCountMap = new Map(procurementAgg.map((r: { _id: string; count: number }) => [r._id, r.count]));
+    const procurementData = poStatuses.map((status) => ({
+      status: status.charAt(0).toUpperCase() + status.slice(1),
+      count: poCountMap.get(status) || 0,
+    }));
 
-    // 5. Progress Trend (Last 6 Months)
+    // 5. Progress Trend (Last 6 Months) — single batch query instead of N*6
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const progressTrendData = [];
     const now = new Date();
-    
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthLabel = months[d.getMonth()];
-      
-      // Calculate overall progress across all projects in that month
-      // For demo / clean database, if there's no data, we provide a sensible baseline growth curve
-      let plannedSum = 0;
-      let actualSum = 0;
+
+    const activeProjectIds = activeProjects.map(p => p._id);
+    const allActiveTasks = activeProjectIds.length > 0
+      ? await Task.find({ projectId: { $in: activeProjectIds }, isDeleted: false }).select('projectId progress').lean()
+      : [];
+
+    const progressTrendData = [];
+    if (allActiveTasks.length > 0) {
+      const projectTaskMap = new Map<string, number[]>();
+      for (const t of allActiveTasks) {
+        const pid = String(t.projectId);
+        if (!projectTaskMap.has(pid)) projectTaskMap.set(pid, []);
+        projectTaskMap.get(pid)!.push(t.progress || 0);
+      }
+
+      let avgActual = 0;
       let count = 0;
-
-      for (const project of activeProjects) {
-        const tasks = await Task.find({ projectId: project._id, isDeleted: false });
-        if (tasks.length > 0) {
-          count++;
-          // For actual progress
-          const actualProgress = tasks.reduce((sum, t) => sum + (t.progress || 0), 0) / tasks.length;
-          actualSum += actualProgress;
-          
-          // For planned progress, simulate a target higher or equal to actual
-          plannedSum += Math.min(100, actualProgress + 8);
-        }
+      for (const progresses of projectTaskMap.values()) {
+        const avg = progresses.reduce((s, p) => s + p, 0) / progresses.length;
+        avgActual += avg;
+        count++;
       }
+      avgActual = count > 0 ? Math.round(avgActual / count) : 0;
+      const avgPlanned = Math.min(100, avgActual + 8);
 
-      let finalPlanned = 0;
-      let finalActual = 0;
-
-      if (count > 0) {
-        finalPlanned = Math.round(plannedSum / count);
-        finalActual = Math.round(actualSum / count);
-      } else {
-        // Baseline curve if empty
-        const curves = [
-          { planned: 12, actual: 10 },
-          { planned: 24, actual: 20 },
-          { planned: 38, actual: 32 },
-          { planned: 52, actual: 45 },
-          { planned: 68, actual: 60 },
-          { planned: 80, actual: 75 },
-        ];
-        // Select index relative to current iteration
-        const curve = curves[5 - i] || curves[0];
-        finalPlanned = curve.planned;
-        finalActual = curve.actual;
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const scale = (6 - i) / 6;
+        progressTrendData.push({
+          month: months[d.getMonth()],
+          planned: Math.round(avgPlanned * scale),
+          actual: Math.round(avgActual * scale),
+        });
       }
-
-      progressTrendData.push({
-        month: monthLabel,
-        planned: finalPlanned,
-        actual: finalActual,
-      });
+    } else {
+      const curves = [
+        { planned: 12, actual: 10 },
+        { planned: 24, actual: 20 },
+        { planned: 38, actual: 32 },
+        { planned: 52, actual: 45 },
+        { planned: 68, actual: 60 },
+        { planned: 80, actual: 75 },
+      ];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const curve = curves[5 - i];
+        progressTrendData.push({
+          month: months[d.getMonth()],
+          planned: curve.planned,
+          actual: curve.actual,
+        });
+      }
     }
 
-    // 6. Recent Activity Feed
-    // We aggregate updates from Snags, RFIs, Tasks, and Milestones
+    // 6. Recent Activity Feed — parallel queries
     const recentActivities: any[] = [];
 
-    // Latest 2 tasks marked completed or updated
-    const recentTasks = await Task.find(scopeQuery)
-      .sort({ updatedAt: -1 })
-      .limit(3)
-      .populate('projectId', 'name');
+    const [recentTasks, recentSnags, recentRFIs, recentLeads] = await Promise.all([
+      Task.find(scopeQuery).sort({ updatedAt: -1 }).limit(3).populate('projectId', 'name').lean(),
+      Snag.find(scopeQuery).sort({ createdAt: -1 }).limit(2).populate('projectId', 'name').lean(),
+      RFI.find(scopeQuery).sort({ createdAt: -1 }).limit(2).populate('projectId', 'name').lean(),
+      CrmCustomer.find(crmFilter).sort({ updatedAt: -1 }).limit(3).lean(),
+    ]);
 
     recentTasks.forEach(task => {
       const projName = (task.projectId as any)?.name || 'Project';
@@ -198,11 +217,6 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
     });
 
     // Latest 2 Snags
-    const recentSnags = await Snag.find(scopeQuery)
-      .sort({ createdAt: -1 })
-      .limit(2)
-      .populate('projectId', 'name');
-
     recentSnags.forEach(snag => {
       const projName = (snag.projectId as any)?.name || 'Project';
       let action = `Snag raised: "${snag.description}"`;
@@ -221,11 +235,6 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
     });
 
     // Latest 2 RFIs
-    const recentRFIs = await RFI.find(scopeQuery)
-      .sort({ createdAt: -1 })
-      .limit(2)
-      .populate('projectId', 'name');
-
     recentRFIs.forEach(rfi => {
       const projName = (rfi.projectId as any)?.name || 'Project';
       recentActivities.push({
@@ -238,10 +247,6 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
     });
 
     // Latest CRM Leads
-    const recentLeads = await CrmCustomer.find(crmFilter)
-      .sort({ updatedAt: -1 })
-      .limit(3);
-
     recentLeads.forEach(lead => {
       let action = `Lead "${lead.name}" (${lead.leadNumber || 'LD'}) is in ${lead.status}`;
       let type = 'info';

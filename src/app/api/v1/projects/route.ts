@@ -86,15 +86,23 @@ async function getProjectsHandler(req: NextRequest, _context: any, auth: JwtPayl
     const projects = await Project.find(query)
       .sort(sortQuery)
       .skip((page - 1) * limit)
-      .limit(limit);
+      .limit(limit)
+      .lean();
+
+    const projectIds = projects.map((p) => p._id);
+
+    const teamCounts = await ProjectMember.aggregate([
+      { $match: { projectId: { $in: projectIds }, isDeleted: false } },
+      { $group: { _id: '$projectId', count: { $sum: 1 } } },
+    ]);
+    const teamMap = new Map(teamCounts.map((t: { _id: any; count: number }) => [String(t._id), t.count]));
 
     const enrichedProjects = await Promise.all(
       projects.map(async (project) => {
-        const teamSize = await ProjectMember.countDocuments({ projectId: project._id, isDeleted: false });
         const metrics = await calculateProjectMetrics(project._id, organizationId, project);
         return {
-          ...project.toJSON(),
-          teamSize,
+          ...project,
+          teamSize: teamMap.get(String(project._id)) || 0,
           openSnags: 0,
           openRFIs: 0,
           progress: metrics.progress,

@@ -55,7 +55,7 @@ export function withAuth(
 
     // Verify user still exists and is active
     await connectDB();
-    const user = await User.findById(auth.userId).select('status isDeleted');
+    const user = await User.findById(auth.userId).select('status isDeleted').lean();
 
     if (!user || user.isDeleted || user.status !== 'active') {
       return unauthorizedResponse('Account is inactive or not found');
@@ -73,7 +73,7 @@ export function withAuth(
       path.startsWith('/api/v1/billing');
 
     if (!isBypassRoute) {
-      const org = await Organization.findById(auth.organizationId).select('subscription');
+      const org = await Organization.findById(auth.organizationId).select('subscription').lean();
       if (org) {
         const sub = org.subscription;
         let isExpired = false;
