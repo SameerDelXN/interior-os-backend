@@ -67,6 +67,12 @@ export interface IQuotationVersion {
   createdAt: Date;
 }
 
+export interface IDesignFile {
+  name: string;
+  url: string;
+  fileType: string;
+}
+
 export interface ICRMLead extends Document {
   _id: mongoose.Types.ObjectId;
   organizationId: mongoose.Types.ObjectId;
@@ -86,6 +92,7 @@ export interface ICRMLead extends Document {
   siteVisit: ISiteVisit;
   requirements: IRequirements;
   quotations: IQuotationVersion[];
+  designFiles: IDesignFile[];
   createdProjectId?: mongoose.Types.ObjectId;
   isDeleted: boolean;
   deletedAt?: Date;
@@ -162,6 +169,12 @@ const QuotationVersionSchema = new Schema<IQuotationVersion>({
   proposal: ProposalTrackerSchema,
   pdfUrl: String,
   createdAt: { type: Date, default: Date.now },
+});
+
+const DesignFileSchema = new Schema<IDesignFile>({
+  name: { type: String, required: true },
+  url: { type: String, required: true },
+  fileType: { type: String, required: true },
 });
 
 const CRMLeadSchema = new Schema<ICRMLead>(
@@ -241,6 +254,7 @@ const CRMLeadSchema = new Schema<ICRMLead>(
       default: () => ({ rooms: [], materials: [], aiWbsGenerated: false, aiBoqGenerated: false }),
     },
     quotations: [QuotationVersionSchema],
+    designFiles: [DesignFileSchema],
     createdProjectId: {
       type: Schema.Types.ObjectId,
       ref: 'Project',

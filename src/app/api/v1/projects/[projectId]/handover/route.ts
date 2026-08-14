@@ -52,11 +52,16 @@ async function updateHandoverHandler(req: NextRequest, context: { params: Promis
     const { projectId } = await context.params;
     const body = await req.json();
 
-    const { taskName, status, documentName, documentUrl, documentType, checklist } = body;
+    const { taskName, status, documentName, documentUrl, documentType, checklist, deleteDocumentId } = body;
 
     let handover = await Handover.findOne({ projectId, organizationId });
     if (!handover) {
       return errorResponse('Handover record not initialized', 404);
+    }
+
+    // Delete document
+    if (deleteDocumentId) {
+      handover.documents = (handover.documents as any).filter((doc: any) => doc._id.toString() !== deleteDocumentId);
     }
 
     // Update entire checklist structure
