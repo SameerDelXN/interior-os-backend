@@ -6,7 +6,18 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface ISiteMeasurements {
   carpetArea?: string;
+  roomDimensions?: string; // Room length × width
   ceilingHeight?: string;
+  floorToCeilingHeight?: string;
+  doorDimensions?: string;
+  windowDimensions?: string;
+  wallThickness?: string;
+  columnBeamDimensions?: string;
+  electricalPoints?: string;
+  plumbingPoints?: string;
+  acLocations?: string;
+  furnitureDimensions?: string;
+  siteConstraints?: string;
   rooms?: string;
   notes?: string;
 }
@@ -15,12 +26,34 @@ export interface IRequirement {
   roomName?: string;
   description?: string;
   theme?: string;
+
+  // Type of Interior
+  interiorType?: string; // Residential, Commercial, Office, Restaurant, Retail, etc.
+
+  // Functional Requirements
+  roomUsage?: string;
+  furnitureRequirements?: string;
+  storage?: string;
+  electricalPoints?: string;
+  lightingRequirements?: string;
+  plumbingRequirements?: string;
+  circulation?: string;
+
+  // Aesthetic Requirements
+  designStyle?: string;
+  colours?: string;
+  materials?: string;
+  flooring?: string;
+  ceiling?: string;
+  wallFinishes?: string;
+  furnitureStyle?: string;
 }
 
 export interface IDesignFile {
-  name?: string;
-  url?: string;
-  fileType?: string;
+  name: string;
+  url: string;
+  fileType: string;
+  category?: string;
   uploadedAt: Date;
 }
 
@@ -44,10 +77,30 @@ export interface IQuotation {
   notes?: string;
 }
 
+export interface IBoqItem {
+  serialNumber?: number;
+  category: string;
+  itemName: string;
+  description?: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  amount: number;
+}
+
+export interface IBoqVersion {
+  version: number;
+  items: IBoqItem[];
+  totalAmount: number;
+  status: 'draft' | 'pending_approval' | 'approved' | 'rejected';
+  createdAt?: Date;
+  notes?: string;
+}
+
 export interface ICrmCustomer extends Document {
   _id: mongoose.Types.ObjectId;
   organizationId: mongoose.Types.ObjectId;
-  leadNumber: string;
+  leadNumber?: string;
   leadSource?:
     | 'Phone Call'
     | 'Walk-in'
@@ -81,12 +134,20 @@ export interface ICrmCustomer extends Document {
     | 'New Lead'
     | 'Contacted'
     | 'Meeting Scheduled'
+    | 'Under Site Visit'
     | 'Measurement Done'
+    | 'Under Requirement'
     | 'Requirement Completed'
+    | 'Under Drawing'
     | 'Design Approved'
+    | 'Under BOQ Creation'
+    | 'Under Quotation'
+    | 'Quotation Pending'
     | 'Quotation Sent'
+    | 'Negotiation'
     | 'Booking Pending'
     | 'Won'
+    | 'Converted'
     | 'Lost';
   remarks?: string;
 
@@ -100,6 +161,7 @@ export interface ICrmCustomer extends Document {
 
   requirements: IRequirement[];
   designFiles: IDesignFile[];
+  boqs: IBoqVersion[];
   quotations: IQuotation[];
 
   createdBy: mongoose.Types.ObjectId;
@@ -112,7 +174,18 @@ export interface ICrmCustomer extends Document {
 const SiteMeasurementsSchema = new Schema<ISiteMeasurements>(
   {
     carpetArea: String,
+    roomDimensions: String,
     ceilingHeight: String,
+    floorToCeilingHeight: String,
+    doorDimensions: String,
+    windowDimensions: String,
+    wallThickness: String,
+    columnBeamDimensions: String,
+    electricalPoints: String,
+    plumbingPoints: String,
+    acLocations: String,
+    furnitureDimensions: String,
+    siteConstraints: String,
     rooms: String,
     notes: String,
   },
@@ -123,12 +196,28 @@ const RequirementSchema = new Schema<IRequirement>({
   roomName: String,
   description: String,
   theme: String,
+  interiorType: String,
+  roomUsage: String,
+  furnitureRequirements: String,
+  storage: String,
+  electricalPoints: String,
+  lightingRequirements: String,
+  plumbingRequirements: String,
+  circulation: String,
+  designStyle: String,
+  colours: String,
+  materials: String,
+  flooring: String,
+  ceiling: String,
+  wallFinishes: String,
+  furnitureStyle: String,
 });
 
 const DesignFileSchema = new Schema<IDesignFile>({
   name: String,
   url: String,
   fileType: String,
+  category: { type: String, enum: ['2D', '3D', 'Other'], default: '2D' },
   uploadedAt: { type: Date, default: Date.now },
 });
 
@@ -154,6 +243,32 @@ const QuotationSchema = new Schema<IQuotation>({
   createdAt: { type: Date, default: Date.now },
   notes: String,
 });
+
+const BoqItemSchema = new Schema(
+  {
+    serialNumber: Number,
+    category: String,
+    itemName: String,
+    description: String,
+    quantity: Number,
+    unit: String,
+    rate: Number,
+    amount: Number,
+  },
+  { _id: false }
+);
+
+const CustomerBoqSchema = new Schema(
+  {
+    version: Number,
+    items: [BoqItemSchema],
+    totalAmount: Number,
+    status: { type: String, enum: ['draft', 'pending_approval', 'approved', 'rejected'], default: 'draft' },
+    createdAt: { type: Date, default: Date.now },
+    notes: String,
+  },
+  { _id: false }
+);
 
 const CrmCustomerSchema = new Schema<ICrmCustomer>(
   {
@@ -203,12 +318,20 @@ const CrmCustomerSchema = new Schema<ICrmCustomer>(
         'New Lead',
         'Contacted',
         'Meeting Scheduled',
+        'Under Site Visit',
         'Measurement Done',
+        'Under Requirement',
         'Requirement Completed',
+        'Under Drawing',
         'Design Approved',
+        'Under BOQ Creation',
+        'Under Quotation',
+        'Quotation Pending',
         'Quotation Sent',
+        'Negotiation',
         'Booking Pending',
         'Won',
+        'Converted',
         'Lost',
       ],
       default: 'New Lead',
@@ -226,6 +349,7 @@ const CrmCustomerSchema = new Schema<ICrmCustomer>(
 
     requirements: [RequirementSchema],
     designFiles: [DesignFileSchema],
+    boqs: [CustomerBoqSchema],
     quotations: [QuotationSchema],
 
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -245,7 +369,7 @@ const CrmCustomerSchema = new Schema<ICrmCustomer>(
 );
 
 CrmCustomerSchema.index({ organizationId: 1, leadNumber: 1 }, { unique: true });
-
+delete mongoose.models.CrmCustomer;
 export const CrmCustomer: Model<ICrmCustomer> =
   mongoose.models.CrmCustomer || mongoose.model<ICrmCustomer>('CrmCustomer', CrmCustomerSchema);
 

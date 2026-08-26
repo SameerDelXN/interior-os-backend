@@ -45,7 +45,9 @@ const updateCustomerSchema = z.object({
   sitePhotos: z.array(z.string()).optional(),
   requirements: z.any().optional(),
   designs: z.array(z.any()).optional(),
+  designFiles: z.array(z.any()).optional(),
   quotations: z.array(z.any()).optional(),
+  boqs: z.array(z.any()).optional(),
   remarks: z.string().optional(),
 });
 

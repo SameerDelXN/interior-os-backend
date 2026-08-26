@@ -71,6 +71,8 @@ export interface IDesignFile {
   name: string;
   url: string;
   fileType: string;
+  category?: string;
+  uploadedAt: Date;
 }
 
 export interface ICRMLead extends Document {
@@ -175,6 +177,8 @@ const DesignFileSchema = new Schema<IDesignFile>({
   name: { type: String, required: true },
   url: { type: String, required: true },
   fileType: { type: String, required: true },
+  category: String,
+  uploadedAt: { type: Date, default: Date.now },
 });
 
 const CRMLeadSchema = new Schema<ICRMLead>(

@@ -44,8 +44,8 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
           won: { $sum: { $cond: [{ $eq: ['$status', 'Won'] }, 1, 0] } },
           contacted: { $sum: { $cond: [{ $eq: ['$status', 'Contacted'] }, 1, 0] } },
           meetingOrMeasured: { $sum: { $cond: [{ $in: ['$status', ['Meeting Scheduled', 'Measurement Done']] }, 1, 0] } },
-          reqCompleted: { $sum: { $cond: [{ $eq: ['$status', 'Requirement Completed'] }, 1, 0] } },
-          quotSent: { $sum: { $cond: [{ $eq: ['$status', 'Quotation Sent'] }, 1, 0] } },
+          reqCompleted: { $sum: { $cond: [{ $eq: ['$status', 'Under Requirement'] }, 1, 0] } },
+          quotSent: { $sum: { $cond: [{ $eq: ['$status', 'Under Quotation'] }, 1, 0] } },
           lost: { $sum: { $cond: [{ $eq: ['$status', 'Lost'] }, 1, 0] } },
         },
       },
@@ -253,7 +253,7 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
       if (lead.status === 'Won') {
         action = `Lead "${lead.name}" converted (Won)`;
         type = 'success';
-      } else if (lead.status === 'Quotation Sent') {
+      } else if (lead.status === 'Under Quotation') {
         action = `Quotation sent to "${lead.name}"`;
         type = 'warning';
       } else if (lead.status === 'Measurement Done') {

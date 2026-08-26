@@ -5,13 +5,14 @@
 import nodemailer from 'nodemailer';
 import { env } from '@/config/env';
 
+const smtpPass = (env.SMTP_PASS || '').replace(/\s+/g, '');
+const isGmail = env.SMTP_HOST.toLowerCase().includes('gmail');
+
 const transporter = nodemailer.createTransport({
-  host: env.SMTP_HOST,
-  port: env.SMTP_PORT,
-  secure: env.SMTP_SECURE,
+  ...(isGmail ? { service: 'gmail' } : { host: env.SMTP_HOST, port: env.SMTP_PORT, secure: env.SMTP_SECURE || env.SMTP_PORT === 465 }),
   auth: {
     user: env.SMTP_USER,
-    pass: env.SMTP_PASS,
+    pass: smtpPass,
   },
 });
 
@@ -20,6 +21,7 @@ export interface EmailOptions {
   subject: string;
   html: string;
   text?: string;
+  from?: string;
   attachments?: Array<{
     filename: string;
     content: Buffer | string;
@@ -28,9 +30,10 @@ export interface EmailOptions {
 }
 
 export async function sendEmail(options: EmailOptions): Promise<void> {
+  const fromAddress = options.from || env.SMTP_USER || env.EMAIL_FROM;
   try {
     await transporter.sendMail({
-      from: `"${env.APP_NAME}" <${env.EMAIL_FROM}>`,
+      from: `"${env.APP_NAME}" <${fromAddress}>`,
       to: Array.isArray(options.to) ? options.to.join(', ') : options.to,
       subject: options.subject,
       html: options.html,
@@ -38,9 +41,9 @@ export async function sendEmail(options: EmailOptions): Promise<void> {
       attachments: options.attachments,
     });
     console.log(`✅ Email sent to ${options.to}`);
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Failed to send email:', error);
-    // Don't throw — email failures shouldn't break the app flow
+    throw error;
   }
 }
 
@@ -139,23 +142,29 @@ export function quotationInvoiceEmailTemplate(
     items: Array<{ description: string; quantity: number; unitPrice: number; total: number }>;
     subtotal: number;
     taxPercentage: number;
-    tax: number;
-    discount: number;
-    grandTotal: number;
+    tax?: number;
+    discount?: number;
+    grandTotal?: number;
     notes?: string;
     createdAt?: Date | string;
   },
   companyName: string = 'InteriorOS'
 ): string {
-  const formattedItems = (quotation.items || []).map((item, idx) => `
+  const formattedItems = (quotation.items || []).map((item: any, idx) => {
+    const desc = item.description || item.itemName || item.name || `Item ${idx + 1}`;
+    const qty = Number(item.quantity) || 1;
+    const price = Number(item.unitPrice || item.rate) || 0;
+    const total = Number(item.total || item.amount) || (qty * price);
+    return `
     <tr style="border-bottom: 1px solid #f1f5f9;">
       <td style="padding: 12px; font-size: 13px; color: #334155; text-align: center;">${idx + 1}</td>
-      <td style="padding: 12px; font-size: 13px; color: #0f172a; font-weight: 500;">${item.description}</td>
-      <td style="padding: 12px; font-size: 13px; color: #334155; text-align: center;">${item.quantity}</td>
-      <td style="padding: 12px; font-size: 13px; color: #334155; text-align: right;">₹${(item.unitPrice || 0).toLocaleString('en-IN')}</td>
-      <td style="padding: 12px; font-size: 13px; color: #0f172a; font-weight: 600; text-align: right;">₹${((item.total || (item.quantity * item.unitPrice)) || 0).toLocaleString('en-IN')}</td>
+      <td style="padding: 12px; font-size: 13px; color: #0f172a; font-weight: 500;">${desc}</td>
+      <td style="padding: 12px; font-size: 13px; color: #334155; text-align: center;">${qty}</td>
+      <td style="padding: 12px; font-size: 13px; color: #334155; text-align: right;">₹${price.toLocaleString('en-IN')}</td>
+      <td style="padding: 12px; font-size: 13px; color: #0f172a; font-weight: 600; text-align: right;">₹${total.toLocaleString('en-IN')}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 
   const qtnNum = quotation.quotationNumber || `QTN-V${quotation.version}`;
   const dateStr = new Date(quotation.createdAt || Date.now()).toLocaleDateString('en-IN', {

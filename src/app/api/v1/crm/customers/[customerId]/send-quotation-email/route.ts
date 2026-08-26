@@ -15,24 +15,28 @@ import { z } from 'zod';
 
 const sendQuotationEmailSchema = z.object({
   quotation: z.object({
-    version: z.number(),
+    version: z.number().optional().default(1),
     quotationNumber: z.string().optional(),
     items: z.array(
       z.object({
-        description: z.string(),
-        quantity: z.number(),
-        unitPrice: z.number(),
-        total: z.number(),
-      })
-    ),
-    subtotal: z.number(),
-    taxPercentage: z.number(),
-    tax: z.number(),
-    discount: z.number(),
-    grandTotal: z.number(),
-    notes: z.string().optional(),
-  }),
-  recipientEmail: z.string().trim().email().optional().or(z.literal('')),
+        description: z.string().optional(),
+        itemName: z.string().optional(),
+        name: z.string().optional(),
+        quantity: z.any().optional(),
+        unitPrice: z.any().optional(),
+        rate: z.any().optional(),
+        total: z.any().optional(),
+        amount: z.any().optional(),
+      }).passthrough()
+    ).optional().default([]),
+    subtotal: z.any().optional().default(0),
+    taxPercentage: z.any().optional().default(0),
+    tax: z.any().optional().default(0),
+    discount: z.any().optional().default(0),
+    grandTotal: z.any().optional().default(0),
+    notes: z.string().optional().nullable(),
+  }).passthrough(),
+  recipientEmail: z.string().trim().optional().or(z.literal('')),
 });
 
 async function sendQuotationEmailHandler(
@@ -60,14 +64,14 @@ async function sendQuotationEmailHandler(
       return errorResponse('Customer not found', 404);
     }
 
-    const targetEmail = validation.data.recipientEmail || customer.email;
+    const targetEmail = (validation.data.recipientEmail || customer.email || '').trim();
     if (!targetEmail) {
       return errorResponse('Lead does not have an email address specified. Please provide a valid email.', 400);
     }
 
     const { quotation } = validation.data;
     const qtnLabel = quotation.quotationNumber || `Quotation v${quotation.version}`;
-    const emailHtml = quotationInvoiceEmailTemplate(customer.name, quotation, 'InteriorOS');
+    const emailHtml = quotationInvoiceEmailTemplate(customer.name, quotation as any, 'InteriorOS');
 
     // Send email via nodemailer
     await sendEmail({
@@ -83,7 +87,7 @@ async function sendQuotationEmailHandler(
       organizationId,
       type: 'Email',
       status: 'Completed',
-      remarks: `Emailed Proforma Invoice & ${qtnLabel} (₹${quotation.grandTotal.toLocaleString('en-IN')}) to ${targetEmail}`,
+      remarks: `Emailed Proforma Invoice & ${qtnLabel} (₹${(Number(quotation.grandTotal) || 0).toLocaleString('en-IN')}) to ${targetEmail}`,
       completedDate: new Date(),
     });
 
@@ -93,7 +97,7 @@ async function sendQuotationEmailHandler(
     );
   } catch (error: any) {
     console.error('Send Quotation Email error:', error);
-    return serverErrorResponse();
+    return errorResponse(error.message || 'Failed to send quotation email. Please verify SMTP settings.', 500);
   }
 }
 
