@@ -32,12 +32,9 @@ async function createPurchaseOrderHandler(req: NextRequest, context: { params: P
     const { projectId } = await context.params;
     const body = await req.json();
 
-    const { vendorName, items } = body;
-    if (!vendorName) {
-      return errorResponse('vendorName is required', 400);
-    }
+    const vendorName = (body.vendorName || '').trim() || 'Unassigned';
 
-    let poItems = items || [];
+    let poItems = body.items || [];
     let calculatedAmount = 0;
     let materialName = body.materialName;
 

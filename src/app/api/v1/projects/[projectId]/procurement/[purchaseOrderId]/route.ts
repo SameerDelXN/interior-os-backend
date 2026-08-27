@@ -12,10 +12,14 @@ import type { JwtPayload } from '@/lib/jwt';
 import { z } from 'zod';
 
 const updatePoSchema = z.object({
-  status: z.enum(['pending', 'approved', 'ordered', 'dispatched', 'delivered', 'rejected']).optional(),
+  status: z.enum(['requested', 'pending', 'approved', 'ordered', 'dispatched', 'partially_delivered', 'delivered', 'rejected']).optional(),
   vendorName: z.string().optional(),
-  deliveryDate: z.string().transform((val) => new Date(val)).optional(),
-});
+  deliveryDate: z.union([z.string(), z.date()]).transform((val) => new Date(val)).optional(),
+  items: z.array(z.any()).optional(),
+  amount: z.number().optional(),
+  grns: z.array(z.any()).optional(),
+  grnData: z.any().optional(),
+}).passthrough();
 
 // GET: Retrieve a single PO
 async function getPurchaseOrderDetailsHandler(req: NextRequest, context: { params: Promise<Record<string, string>> }, auth: JwtPayload) {
@@ -51,6 +55,17 @@ async function updatePurchaseOrderHandler(req: NextRequest, context: { params: P
     const oldPo = await PurchaseOrder.findOne({ _id: purchaseOrderId, projectId, organizationId, isDeleted: false });
     if (!oldPo) {
       return notFoundResponse('Purchase Order not found');
+    }
+
+    const isOldApproved = ['approved', 'dispatched', 'partially_delivered', 'delivered'].includes(oldPo.status);
+    if (isOldApproved) {
+      // Disallow changing vendorName or modifying rates/items once approved
+      if (body.vendorName && body.vendorName !== oldPo.vendorName) {
+        return errorResponse('Vendor cannot be changed once the Purchase Order is approved', 400);
+      }
+      if (body.items !== undefined && JSON.stringify(body.items) !== JSON.stringify(oldPo.items)) {
+        return errorResponse('Rates and items cannot be modified once the Purchase Order is approved', 400);
+      }
     }
 
     const newStatus = body.status;

@@ -13,7 +13,7 @@ export interface IPurchaseOrder extends Document {
   materialName: string;
   amount: number;
   currency: string;
-  status: 'pending' | 'approved' | 'ordered' | 'dispatched' | 'delivered' | 'rejected';
+  status: 'requested' | 'pending' | 'approved' | 'ordered' | 'dispatched' | 'partially_delivered' | 'delivered' | 'rejected';
   deliveryDate?: Date;
   items: Array<{
     name: string;
@@ -33,13 +33,13 @@ const PurchaseOrderSchema = new Schema<IPurchaseOrder>(
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
     projectId: { type: Schema.Types.ObjectId, ref: 'Project', required: true, index: true },
     poNumber: { type: String, required: true },
-    vendorName: { type: String, required: true, trim: true },
+    vendorName: { type: String, default: 'Unassigned', trim: true },
     materialName: { type: String, required: true, trim: true },
     amount: { type: Number, required: true, min: 0 },
     currency: { type: String, default: 'INR' },
     status: {
       type: String,
-      enum: ['pending', 'approved', 'ordered', 'dispatched', 'delivered', 'rejected'],
+      enum: ['requested', 'pending', 'approved', 'ordered', 'dispatched', 'partially_delivered', 'delivered', 'rejected'],
       default: 'pending',
       index: true,
     },
@@ -77,6 +77,9 @@ PurchaseOrderSchema.pre('findOne', function () {
   }
 });
 
+if (mongoose.models.PurchaseOrder) {
+  delete mongoose.models.PurchaseOrder;
+}
+
 export const PurchaseOrder: Model<IPurchaseOrder> = mongoose.models.PurchaseOrder || mongoose.model<IPurchaseOrder>('PurchaseOrder', PurchaseOrderSchema);
 export default PurchaseOrder;
-//
