@@ -9,7 +9,7 @@ import { CrmActivity } from '@/models/crm-activity.model';
 import { successResponse, createdResponse, errorResponse, serverErrorResponse } from '@/lib/api-response';
 import type { JwtPayload } from '@/lib/jwt';
 
-// GET: List activities for a customer
+// GET: List activities for a customer or all activities for organization
 async function getActivitiesHandler(req: NextRequest, _context: any, auth: JwtPayload) {
   try {
     await connectDB();
@@ -17,17 +17,49 @@ async function getActivitiesHandler(req: NextRequest, _context: any, auth: JwtPa
 
     const searchParams = req.nextUrl.searchParams;
     const customerId = searchParams.get('customerId');
+    const status = searchParams.get('status');
 
-    if (!customerId) {
-      return errorResponse('Customer ID is required', 400);
+    const query: any = {
+      organizationId,
+    };
+
+    if (customerId) {
+      query.customer = customerId;
+    } else {
+      // For general follow-ups view, exclude Site Visit transitions and system updates
+      query.type = { $nin: ['Site Visit', 'Status Change', 'System Update'] };
+    }
+    if (status && status !== 'all') {
+      query.status = status;
     }
 
-    const activities = await CrmActivity.find({
-      customer: customerId,
-      organizationId,
-    })
+    const activities = await CrmActivity.find(query)
+      .populate({
+        path: 'customer',
+        select: 'name mobileNumber status assignedSalesExecutive leadNumber projectLocation',
+        populate: { path: 'assignedSalesExecutive', select: 'firstName lastName email' },
+      })
       .populate('user', 'firstName lastName email')
-      .sort({ createdAt: -1 });
+      .sort({ updatedAt: -1, scheduledDate: -1, createdAt: -1 });
+
+    // When querying across all customers, deduplicate so each lead appears at most once
+    if (!customerId) {
+      const seenCustomerIds = new Set<string>();
+      const uniqueActivities: any[] = [];
+
+      for (const act of activities) {
+        if (!act.customer) continue;
+        const custId = (act.customer as any)._id?.toString();
+        if (!custId) continue;
+
+        if (!seenCustomerIds.has(custId)) {
+          seenCustomerIds.add(custId);
+          uniqueActivities.push(act);
+        }
+      }
+
+      return successResponse(uniqueActivities);
+    }
 
     return successResponse(activities);
   } catch (error) {
@@ -59,6 +91,22 @@ async function createActivityHandler(req: NextRequest, _context: any, auth: JwtP
     }
 
     const validData = validation.data;
+
+    // If creating a new pending activity or site visit, complete any existing pending activities for this customer
+    if (validData.status === 'Pending' || validData.type === 'Site Visit') {
+      await CrmActivity.updateMany(
+        {
+          customer: validData.customer,
+          organizationId,
+          status: 'Pending',
+        },
+        {
+          status: 'Completed',
+          completedDate: new Date(),
+        }
+      );
+    }
+
     const activity: any = await CrmActivity.create({
       ...validData,
       type: validData.type as any,

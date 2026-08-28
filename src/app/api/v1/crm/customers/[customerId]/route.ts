@@ -72,9 +72,26 @@ async function updateCustomerHandler(
       return errorResponse(validation.error.issues[0].message, 400);
     }
 
+    const updateData: any = { ...validation.data };
+    const unsetData: any = {};
+
+    if (updateData.assignedSalesExecutive === '' || updateData.assignedSalesExecutive === null) {
+      delete updateData.assignedSalesExecutive;
+      unsetData.assignedSalesExecutive = 1;
+    }
+    if (updateData.designerAssigned === '' || updateData.designerAssigned === null) {
+      delete updateData.designerAssigned;
+      unsetData.designerAssigned = 1;
+    }
+
+    const updateQuery: any = { $set: updateData };
+    if (Object.keys(unsetData).length > 0) {
+      updateQuery.$unset = unsetData;
+    }
+
     const customer = await CrmCustomer.findOneAndUpdate(
       { _id: customerId, organizationId },
-      { $set: validation.data },
+      updateQuery,
       { new: true }
     );
 

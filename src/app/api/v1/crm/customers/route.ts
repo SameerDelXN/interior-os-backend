@@ -108,30 +108,36 @@ async function createCustomerHandler(req: NextRequest, _context: any, auth: JwtP
 
     while (!saved && retryCount < 5) {
       try {
-        // Find the latest customer to get the highest lead number for this org
-        const latestCustomer = await CrmCustomer.findOne({ organizationId })
-          .sort({ createdAt: -1 })
-          .select('leadNumber');
+        // Query existing customers for this org to find the highest numerical leadNumber
+        const customersWithLeadNum = await CrmCustomer.find({
+          organizationId,
+          leadNumber: { $regex: /^LD-\d+$/ },
+        })
+          .select('leadNumber')
+          .lean();
 
-        let nextNum = 1001;
-        if (latestCustomer && latestCustomer.leadNumber) {
-          const match = latestCustomer.leadNumber.match(/LD-(\d+)/);
-          if (match) {
-            nextNum = parseInt(match[1], 10) + 1;
-          } else {
-            // Fallback if leadNumber format is different
-            const count = await CrmCustomer.countDocuments({ organizationId });
-            nextNum = 1001 + count;
+        let maxNum = 1000;
+        for (const c of customersWithLeadNum) {
+          if (c.leadNumber) {
+            const match = c.leadNumber.match(/^LD-(\d+)$/);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (!isNaN(num) && num > maxNum) {
+                maxNum = num;
+              }
+            }
           }
         }
 
-        // Add retryCount in case of consecutive clashes
-        nextNum += retryCount;
-
+        let nextNum = maxNum + 1 + retryCount;
         leadNumber = `LD-${nextNum}`;
 
+        const dataToSave = { ...validation.data };
+        if (!dataToSave.assignedSalesExecutive) delete dataToSave.assignedSalesExecutive;
+        if (!dataToSave.designerAssigned) delete dataToSave.designerAssigned;
+
         customer = new CrmCustomer({
-          ...validation.data,
+          ...dataToSave,
           leadNumber,
           organizationId,
           createdBy: auth.userId,
@@ -146,7 +152,7 @@ async function createCustomerHandler(req: NextRequest, _context: any, auth: JwtP
           retryCount++;
           continue;
         }
-        throw err; // Re-throw if it's a different error
+        throw err;
       }
     }
 

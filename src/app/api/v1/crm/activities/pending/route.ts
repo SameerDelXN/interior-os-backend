@@ -14,20 +14,49 @@ async function getPendingActivitiesHandler(req: NextRequest, _context: any, auth
   try {
     await connectDB();
     const organizationId = getOrganizationId(auth);
+    const typeParam = req.nextUrl.searchParams.get('type');
 
-    const pendingActivities = await CrmActivity.find({
+    const query: any = {
       organizationId,
       status: 'Pending',
-    })
+    };
+
+    if (typeParam) {
+      query.type = typeParam;
+    } else {
+      // By default, follow-ups are client communication touchpoints
+      query.type = { $nin: ['Site Visit', 'Status Change', 'System Update'] };
+    }
+
+    const pendingActivities = await CrmActivity.find(query)
       .populate({
         path: 'customer',
-        select: 'name mobileNumber status assignedSalesExecutive',
+        select: 'name mobileNumber status assignedSalesExecutive leadNumber projectLocation',
         populate: { path: 'assignedSalesExecutive', select: 'firstName lastName email' },
       })
       .populate('user', 'firstName lastName email')
-      .sort({ scheduledDate: 1 });
+      .sort({ scheduledDate: 1, createdAt: -1 });
 
-    return successResponse(pendingActivities);
+    // Deduplicate: Keep only 1 pending activity per customer (latest scheduled/created)
+    const seenCustomerIds = new Set<string>();
+    const uniqueActivities: any[] = [];
+
+    for (const act of pendingActivities) {
+      if (!act.customer) continue;
+      const cust = act.customer as any;
+      const custId = cust._id?.toString();
+      if (!custId) continue;
+
+      // Exclude leads that are already lost or converted
+      if (cust.status === 'Lost' || cust.status === 'Converted') continue;
+
+      if (!seenCustomerIds.has(custId)) {
+        seenCustomerIds.add(custId);
+        uniqueActivities.push(act);
+      }
+    }
+
+    return successResponse(uniqueActivities);
   } catch (error) {
     console.error('Pending CRM follow-ups error:', error);
     return serverErrorResponse();

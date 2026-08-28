@@ -31,12 +31,12 @@ export async function connectDB(): Promise<typeof mongoose> {
   if (!cached.promise) {
     const opts: mongoose.ConnectOptions = {
       bufferCommands: false,
-      maxPoolSize: 1,
+      maxPoolSize: 10,
       minPoolSize: 0,
-      socketTimeoutMS: 20000,
-      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      serverSelectionTimeoutMS: 10000,
       heartbeatFrequencyMS: 30000,
-      connectTimeoutMS: 5000,
+      connectTimeoutMS: 10000,
       autoIndex: false,
     };
 
