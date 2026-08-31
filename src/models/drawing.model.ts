@@ -18,7 +18,9 @@ export interface IDrawing extends Document {
   projectId: mongoose.Types.ObjectId;
   drawingNumber: string;
   title: string;
-  discipline: 'tender' | 'shop' | 'gfc' | 'as-built';
+  drawingType: '2D' | '3D';
+  discipline: string;
+  fileType?: string;
   status: 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected';
   revisions: IDrawingRevision[];
   isDeleted: boolean;
@@ -33,12 +35,18 @@ const DrawingSchema = new Schema<IDrawing>(
     projectId: { type: Schema.Types.ObjectId, ref: 'Project', required: true, index: true },
     drawingNumber: { type: String, required: true },
     title: { type: String, required: true, trim: true },
-    discipline: {
+    drawingType: {
       type: String,
-      enum: ['tender', 'shop', 'gfc', 'as-built'],
-      required: true,
+      enum: ['2D', '3D'],
+      default: '2D',
       index: true,
     },
+    discipline: {
+      type: String,
+      default: 'gfc',
+      index: true,
+    },
+    fileType: { type: String },
     status: {
       type: String,
       enum: ['draft', 'submitted', 'under_review', 'approved', 'rejected'],

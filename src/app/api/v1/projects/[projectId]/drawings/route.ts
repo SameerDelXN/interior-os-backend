@@ -33,20 +33,25 @@ async function createDrawingHandler(req: NextRequest, context: { params: Promise
     const { projectId } = await context.params;
     const body = await req.json();
 
-    const { title, discipline, fileUrl } = body;
-    if (!title || !discipline || !fileUrl) {
-      return errorResponse('title, discipline, and fileUrl are required', 400);
+    const { title, discipline, fileUrl, drawingType, fileType } = body;
+    if (!title || !fileUrl) {
+      return errorResponse('title and fileUrl are required', 400);
     }
 
-    const count = await Drawing.countDocuments({ organizationId });
-    const drawingNumber = `DWG-${discipline.toUpperCase()}-${String(count + 1).padStart(3, '0')}`;
+    const type = drawingType === '3D' ? '3D' : '2D';
+    const disc = discipline || (type === '3D' ? '3d-render' : 'gfc');
+
+    const count = await Drawing.countDocuments({ organizationId, projectId });
+    const drawingNumber = `DWG-${type}-${disc.toUpperCase()}-${String(count + 1).padStart(3, '0')}`;
 
     const newDrawing = new Drawing({
       projectId,
       organizationId,
       drawingNumber,
       title,
-      discipline,
+      drawingType: type,
+      discipline: disc,
+      fileType: fileType || '',
       status: 'submitted',
       revisions: [
         {
@@ -75,7 +80,7 @@ async function updateDrawingHandler(req: NextRequest, context: { params: Promise
     const { projectId } = await context.params;
     const body = await req.json();
 
-    const { drawingId, status, fileUrl, changes, revisionName } = body;
+    const { drawingId, status, fileUrl, changes, revisionName, title, discipline, drawingType, fileType } = body;
     if (!drawingId) {
       return errorResponse('drawingId is required', 400);
     }
@@ -97,6 +102,12 @@ async function updateDrawingHandler(req: NextRequest, context: { params: Promise
       drawing.status = 'submitted';
     }
 
+    // If updating metadata
+    if (title) drawing.title = title;
+    if (discipline) drawing.discipline = discipline;
+    if (drawingType) drawing.drawingType = drawingType;
+    if (fileType) drawing.fileType = fileType;
+
     // If updating approval status
     if (status) {
       drawing.status = status;
@@ -110,6 +121,37 @@ async function updateDrawingHandler(req: NextRequest, context: { params: Promise
   }
 }
 
+// DELETE: Soft delete a drawing
+async function deleteDrawingHandler(req: NextRequest, context: { params: Promise<Record<string, string>> }, auth: JwtPayload) {
+  try {
+    await connectDB();
+    const organizationId = getOrganizationId(auth);
+    const { projectId } = await context.params;
+    const { searchParams } = new URL(req.url);
+    const drawingId = searchParams.get('drawingId');
+
+    if (!drawingId) {
+      return errorResponse('drawingId query parameter is required', 400);
+    }
+
+    const drawing = await Drawing.findOneAndUpdate(
+      { _id: drawingId, projectId, organizationId },
+      { isDeleted: true, deletedAt: new Date() },
+      { new: true }
+    );
+
+    if (!drawing) {
+      return notFoundResponse('Drawing not found');
+    }
+
+    return successResponse(drawing, 'Drawing deleted successfully');
+  } catch (error) {
+    console.error('Delete drawing error:', error);
+    return serverErrorResponse();
+  }
+}
+
 export const GET = withAuth(getDrawingsHandler);
 export const POST = withAuth(createDrawingHandler);
 export const PUT = withAuth(updateDrawingHandler);
+export const DELETE = withAuth(deleteDrawingHandler);

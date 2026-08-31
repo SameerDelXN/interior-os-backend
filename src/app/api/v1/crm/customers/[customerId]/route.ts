@@ -72,6 +72,15 @@ async function updateCustomerHandler(
       return errorResponse(validation.error.issues[0].message, 400);
     }
 
+    const existing = await CrmCustomer.findOne({ _id: customerId, organizationId });
+    if (!existing) {
+      return errorResponse('Customer not found', 404);
+    }
+
+    if (existing.status === 'Won' || existing.status === 'Converted' || existing.linkedProject) {
+      return errorResponse('This lead has already been converted to an active project and is locked from modification.', 400);
+    }
+
     const updateData: any = { ...validation.data };
     const unsetData: any = {};
 
@@ -140,6 +149,15 @@ async function deleteCustomerHandler(
 
     if (!mongoose.Types.ObjectId.isValid(customerId)) {
       return errorResponse('Invalid Customer ID', 400);
+    }
+
+    const existing = await CrmCustomer.findOne({ _id: customerId, organizationId });
+    if (!existing) {
+      return errorResponse('Customer not found', 404);
+    }
+
+    if (existing.status === 'Won' || existing.status === 'Converted' || existing.linkedProject) {
+      return errorResponse('This lead has already been converted to an active project and cannot be deleted.', 400);
     }
 
     const customer = await CrmCustomer.findOneAndDelete({ _id: customerId, organizationId });

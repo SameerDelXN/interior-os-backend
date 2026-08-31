@@ -18,6 +18,37 @@ export interface IDPRManpower {
   contractor: string;
 }
 
+export interface IDPRLabourReport {
+  agencyActivity: string;
+  skilled: number;
+  unskilled: number;
+  currentWork: string;
+  statusAsPerBarChart: string;
+}
+
+export interface IDPRMaterialReceipt {
+  supplierName: string;
+  challanNo: string;
+  receiptNo: string;
+  materialDetails: string;
+  uom: string;
+  qty: number | string;
+}
+
+export interface IDPRTomorrowPlanning {
+  agencyActivity: string;
+  skilled: number;
+  unskilled: number;
+  targetedWorks: string;
+  remarkConcern: string;
+}
+
+export interface IDPRMaterialRequirement {
+  materialDescription: string;
+  uom: string;
+  qty: number | string;
+}
+
 export interface IDPR extends Document {
   _id: mongoose.Types.ObjectId;
   organizationId: mongoose.Types.ObjectId;
@@ -26,6 +57,11 @@ export interface IDPR extends Document {
   weather?: string;
   manpower: IDPRManpower[];
   activities: IDPRActivity[];
+  labourReports: IDPRLabourReport[];
+  materialReceipts: IDPRMaterialReceipt[];
+  tomorrowPlanning: IDPRTomorrowPlanning[];
+  materialRequirements: IDPRMaterialRequirement[];
+  siteInstructions?: string;
   photos: string[];
   submittedBy: mongoose.Types.ObjectId;
   isDeleted: boolean;
@@ -56,6 +92,42 @@ const DPRSchema = new Schema<IDPR>(
         remarks: String,
       },
     ],
+    labourReports: [
+      {
+        agencyActivity: { type: String, default: '' },
+        skilled: { type: Number, default: 0 },
+        unskilled: { type: Number, default: 0 },
+        currentWork: { type: String, default: '' },
+        statusAsPerBarChart: { type: String, default: '' },
+      },
+    ],
+    materialReceipts: [
+      {
+        supplierName: { type: String, default: '' },
+        challanNo: { type: String, default: '' },
+        receiptNo: { type: String, default: '' },
+        materialDetails: { type: String, default: '' },
+        uom: { type: String, default: '' },
+        qty: { type: Schema.Types.Mixed, default: '' },
+      },
+    ],
+    tomorrowPlanning: [
+      {
+        agencyActivity: { type: String, default: '' },
+        skilled: { type: Number, default: 0 },
+        unskilled: { type: Number, default: 0 },
+        targetedWorks: { type: String, default: '' },
+        remarkConcern: { type: String, default: '' },
+      },
+    ],
+    materialRequirements: [
+      {
+        materialDescription: { type: String, default: '' },
+        uom: { type: String, default: '' },
+        qty: { type: Schema.Types.Mixed, default: '' },
+      },
+    ],
+    siteInstructions: { type: String, default: '' },
     photos: [{ type: String }],
     submittedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     isDeleted: { type: Boolean, default: false, index: true },

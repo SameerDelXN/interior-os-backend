@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server';
 import { withAuth, getOrganizationId } from '@/middlewares/auth.middleware';
 import { connectDB } from '@/lib/db';
 import { Project } from '@/models/project.model';
+import { CrmCustomer } from '@/models/crm-customer.model';
 import { ProjectMember } from '@/models/project-member.model';
 import { Building, Floor, Zone, Area, Package } from '@/models/wbs.model';
 import { Task } from '@/models/task.model';
@@ -91,6 +92,42 @@ async function getProjectsHandler(req: NextRequest, _context: any, auth: JwtPayl
 
     const projectIds = projects.map((p) => p._id);
 
+    // If any projects have 0 budget, look up linked customer quotation/boq
+    const zeroBudgetProjectIds = projects
+      .filter((p) => !p.budget?.amount || p.budget.amount === 0)
+      .map((p) => p._id);
+
+    const customerBudgetMap = new Map<string, number>();
+    if (zeroBudgetProjectIds.length > 0) {
+      const customers = await CrmCustomer.find({
+        organizationId,
+        linkedProject: { $in: zeroBudgetProjectIds },
+      }).select('linkedProject quotations boqs budgetRange').lean();
+
+      for (const c of customers) {
+        if (c.linkedProject) {
+          let bAmount = 0;
+          if (c.quotations && c.quotations.length > 0) {
+            const accepted: any = c.quotations.find((q: any) => q.status === 'Accepted' || q.status === 'Approved') || c.quotations[c.quotations.length - 1];
+            bAmount = Number(accepted?.grandTotal || accepted?.totalAmount || accepted?.subtotal || accepted?.total || 0);
+          }
+          if (!bAmount && c.boqs && c.boqs.length > 0) {
+            bAmount = Number(c.boqs[c.boqs.length - 1]?.totalAmount || 0);
+          }
+          if (!bAmount && c.budgetRange) {
+            const cleaned = String(c.budgetRange).replace(/[^0-9.]/g, '');
+            const parsed = parseFloat(cleaned);
+            if (!isNaN(parsed) && parsed > 0) bAmount = parsed;
+          }
+          if (bAmount > 0) {
+            customerBudgetMap.set(String(c.linkedProject), bAmount);
+            // Self-healing patch
+            Project.updateOne({ _id: c.linkedProject }, { $set: { 'budget.amount': bAmount } }).catch(() => {});
+          }
+        }
+      }
+    }
+
     const teamCounts = await ProjectMember.aggregate([
       { $match: { projectId: { $in: projectIds }, isDeleted: false } },
       { $group: { _id: '$projectId', count: { $sum: 1 } } },
@@ -100,8 +137,17 @@ async function getProjectsHandler(req: NextRequest, _context: any, auth: JwtPayl
     const enrichedProjects = await Promise.all(
       projects.map(async (project) => {
         const metrics = await calculateProjectMetrics(project._id, organizationId, project);
+        let budgetObj = project.budget || { amount: 0, currency: 'INR' };
+        if ((!budgetObj.amount || budgetObj.amount === 0) && customerBudgetMap.has(String(project._id))) {
+          budgetObj = {
+            ...budgetObj,
+            amount: customerBudgetMap.get(String(project._id)) || 0,
+          };
+        }
+
         return {
           ...project,
+          budget: budgetObj,
           teamSize: teamMap.get(String(project._id)) || 0,
           openSnags: 0,
           openRFIs: 0,
@@ -135,8 +181,33 @@ async function createProjectHandler(req: NextRequest, _context: any, auth: JwtPa
 
     const { templateId, ...projectData } = validation.data;
 
-    const count = await Project.countDocuments({ organizationId });
-    const code = `PRJ-${String(count + 1).padStart(3, '0')}`;
+    const existingProjects = await Project.find({
+      organizationId,
+      code: { $regex: /^PRJ-\d+$/ },
+      isDeleted: { $in: [true, false] },
+    })
+      .select('code')
+      .lean();
+
+    let maxPrjNum = 0;
+    for (const p of existingProjects) {
+      if (p.code) {
+        const match = p.code.match(/^PRJ-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > maxPrjNum) {
+            maxPrjNum = num;
+          }
+        }
+      }
+    }
+
+    let nextNum = maxPrjNum + 1;
+    let code = `PRJ-${String(nextNum).padStart(3, '0')}`;
+    while (await Project.findOne({ organizationId, code, isDeleted: { $in: [true, false] } })) {
+      nextNum++;
+      code = `PRJ-${String(nextNum).padStart(3, '0')}`;
+    }
 
     const project = new Project({
       ...projectData,

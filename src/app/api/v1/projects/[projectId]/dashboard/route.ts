@@ -8,6 +8,7 @@ import { connectDB } from '@/lib/db';
 import { Project } from '@/models/project.model';
 import { Task } from '@/models/task.model';
 import { Milestone } from '@/models/milestone.model';
+import { CrmCustomer } from '@/models/crm-customer.model';
 import { calculateProjectMetrics } from '@/services/project-metrics.service';
 import { successResponse, notFoundResponse, serverErrorResponse } from '@/lib/api-response';
 import type { JwtPayload } from '@/lib/jwt';
@@ -57,6 +58,29 @@ async function getProjectDashboardHandler(req: NextRequest, context: { params: P
     // Calculate dynamic project metrics
     const metrics = await calculateProjectMetrics(projectId, organizationId, project);
 
+    let budgetObj = project.budget || { amount: 0, currency: 'INR' };
+    if (!budgetObj.amount || budgetObj.amount === 0) {
+      const c = await CrmCustomer.findOne({ organizationId, linkedProject: projectId }).select('quotations boqs budgetRange').lean();
+      if (c) {
+        let bAmount = 0;
+        if (c.quotations && c.quotations.length > 0) {
+          const accepted: any = c.quotations.find((q: any) => q.status === 'Accepted' || q.status === 'Approved') || c.quotations[c.quotations.length - 1];
+          bAmount = Number(accepted?.grandTotal || accepted?.totalAmount || accepted?.subtotal || accepted?.total || 0);
+        }
+        if (!bAmount && c.boqs && c.boqs.length > 0) {
+          bAmount = Number(c.boqs[c.boqs.length - 1]?.totalAmount || 0);
+        }
+        if (!bAmount && c.budgetRange) {
+          const cleaned = String(c.budgetRange).replace(/[^0-9.]/g, '');
+          const parsed = parseFloat(cleaned);
+          if (!isNaN(parsed) && parsed > 0) bAmount = parsed;
+        }
+        if (bAmount > 0) {
+          budgetObj = { ...budgetObj, amount: bAmount };
+        }
+      }
+    }
+
     // 4. Return combined details
     return successResponse({
       project: {
@@ -67,7 +91,7 @@ async function getProjectDashboardHandler(req: NextRequest, context: { params: P
         status: project.status,
         startDate: project.startDate,
         endDate: project.endDate,
-        budget: project.budget,
+        budget: budgetObj,
         location: project.location,
         description: project.description,
         progress: metrics.progress,

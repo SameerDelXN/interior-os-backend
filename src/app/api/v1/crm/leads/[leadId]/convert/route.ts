@@ -51,8 +51,34 @@ async function convertLeadHandler(req: NextRequest, context: { params: Promise<R
     }
 
     // 1. Create a Project
-    const count = await Project.countDocuments({ organizationId });
-    const code = `PRJ-${String(count + 1).padStart(3, '0')}`;
+    const existingProjects = await Project.find({
+      organizationId,
+      code: { $regex: /^PRJ-\d+$/ },
+      isDeleted: { $in: [true, false] },
+    })
+      .select('code')
+      .lean();
+
+    let maxPrjNum = 0;
+    for (const p of existingProjects) {
+      if (p.code) {
+        const match = p.code.match(/^PRJ-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > maxPrjNum) {
+            maxPrjNum = num;
+          }
+        }
+      }
+    }
+
+    let nextNum = maxPrjNum + 1;
+    let code = `PRJ-${String(nextNum).padStart(3, '0')}`;
+    while (await Project.findOne({ organizationId, code, isDeleted: { $in: [true, false] } })) {
+      nextNum++;
+      code = `PRJ-${String(nextNum).padStart(3, '0')}`;
+    }
+
     const pName = `${lead.leadName} ${lead.propertyType || 'Interior Setup'}`;
 
     const project = new Project({

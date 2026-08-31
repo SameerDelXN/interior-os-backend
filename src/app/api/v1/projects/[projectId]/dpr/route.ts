@@ -16,7 +16,10 @@ async function getDprsHandler(req: NextRequest, context: { params: Promise<Recor
     const organizationId = getOrganizationId(auth);
     const { projectId } = await context.params;
 
-    const reports = await DailyProgressReport.find({ projectId, organizationId }).sort({ date: -1 });
+    const reports = await DailyProgressReport.find({ projectId, organizationId })
+      .populate('projectId', 'name code clientName location')
+      .populate('submittedBy', 'name email')
+      .sort({ date: -1 });
     return successResponse(reports);
   } catch (error) {
     console.error('Get DPRs error:', error);

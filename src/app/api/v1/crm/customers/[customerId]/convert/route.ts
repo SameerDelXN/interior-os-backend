@@ -18,6 +18,7 @@ import { z } from 'zod';
 const convertCustomerSchema = z.object({
   startDate: z.coerce.date().optional(),
   remarks: z.string().optional(),
+  quotationIndex: z.number().optional(),
 });
 
 async function convertCustomerHandler(
@@ -40,7 +41,7 @@ async function convertCustomerHandler(
       return errorResponse(validation.error.issues[0].message, 400);
     }
 
-    const { startDate, remarks } = validation.data;
+    const { startDate, remarks, quotationIndex } = validation.data;
 
     const customer = await CrmCustomer.findOne({ _id: customerId, organizationId });
 
@@ -52,15 +53,83 @@ async function convertCustomerHandler(
       return errorResponse('Customer is already converted to a Project', 400);
     }
 
-    // Determine accepted quotation (use last one if multiple)
-    let acceptedQuotation = null;
-    if (customer.quotations && customer.quotations.length > 0) {
+    // Determine accepted quotation (use quotationIndex if passed, or find Accepted/Approved, or fallback to latest)
+    let acceptedQuotation: any = null;
+    if (typeof quotationIndex === 'number' && customer.quotations?.[quotationIndex]) {
+      acceptedQuotation = customer.quotations[quotationIndex];
+    } else if (customer.quotations && customer.quotations.length > 0) {
       acceptedQuotation =
-        customer.quotations.find((q) => q.status === 'Accepted') ||
+        customer.quotations.find((q) => q.status === 'Accepted' || (q.status as string) === 'Approved') ||
         customer.quotations[customer.quotations.length - 1];
     }
 
-    const totalBudget = acceptedQuotation ? acceptedQuotation.grandTotal || 0 : 0;
+    let totalBudget = 0;
+
+    // Helper to safely parse numeric values from numbers or strings like "₹ 1,50,000"
+    const parseNum = (val: any): number => {
+      if (typeof val === 'number') return isNaN(val) ? 0 : val;
+      if (typeof val === 'string') {
+        const cleaned = val.replace(/[^0-9.]/g, '');
+        const n = parseFloat(cleaned);
+        return isNaN(n) ? 0 : n;
+      }
+      return 0;
+    };
+
+    // 1. Calculate budget from accepted / selected quotation
+    if (acceptedQuotation) {
+      if (parseNum(acceptedQuotation.grandTotal) > 0) {
+        totalBudget = parseNum(acceptedQuotation.grandTotal);
+      } else if (parseNum(acceptedQuotation.totalAmount) > 0) {
+        totalBudget = parseNum(acceptedQuotation.totalAmount);
+      } else if (parseNum(acceptedQuotation.subtotal) > 0) {
+        totalBudget = parseNum(acceptedQuotation.subtotal);
+      } else if (parseNum(acceptedQuotation.total) > 0) {
+        totalBudget = parseNum(acceptedQuotation.total);
+      } else if (Array.isArray(acceptedQuotation.items) && acceptedQuotation.items.length > 0) {
+        totalBudget = acceptedQuotation.items.reduce((sum: number, it: any) => {
+          const itemVal = parseNum(it.total) || parseNum(it.amount) || (parseNum(it.quantity || 1) * parseNum(it.unitPrice || it.rate || it.price));
+          return sum + itemVal;
+        }, 0);
+      }
+    }
+
+    // 2. If totalBudget is still 0, check ALL quotations on the customer
+    if (!totalBudget && customer.quotations && customer.quotations.length > 0) {
+      for (const q of (customer.quotations as any[])) {
+        const qBudget = parseNum(q.grandTotal) || parseNum(q.totalAmount) || parseNum(q.subtotal) || parseNum(q.total) ||
+          (Array.isArray(q.items) ? q.items.reduce((sum: number, it: any) => sum + (parseNum(it.total) || parseNum(it.amount) || (parseNum(it.quantity || 1) * parseNum(it.unitPrice || it.rate || it.price))), 0) : 0);
+        if (qBudget > 0) {
+          totalBudget = qBudget;
+          break;
+        }
+      }
+    }
+
+    // 3. Fallback: check BOQ totalAmount or BOQ items
+    if (!totalBudget && customer.boqs && customer.boqs.length > 0) {
+      for (let i = customer.boqs.length - 1; i >= 0; i--) {
+        const boq = customer.boqs[i];
+        if (parseNum(boq?.totalAmount) > 0) {
+          totalBudget = parseNum(boq.totalAmount);
+          break;
+        } else if (Array.isArray(boq?.items) && boq.items.length > 0) {
+          const boqSum = boq.items.reduce((sum: number, it: any) => {
+            const itemVal = parseNum(it.amount) || (parseNum(it.quantity || 1) * parseNum(it.rate || it.unitPrice));
+            return sum + itemVal;
+          }, 0);
+          if (boqSum > 0) {
+            totalBudget = boqSum;
+            break;
+          }
+        }
+      }
+    }
+
+    // 4. Fallback: check customer.budgetRange
+    if (!totalBudget && customer.budgetRange) {
+      totalBudget = parseNum(customer.budgetRange);
+    }
 
     // Determine project type based on propertyType
     let projectType: 'Commercial Office' | 'Residential' | 'Tech Office' | 'General' = 'General';
@@ -74,6 +143,7 @@ async function convertCustomerHandler(
     const existingProjects = await Project.find({
       organizationId,
       code: { $regex: /^PRJ-\d+$/ },
+      isDeleted: { $in: [true, false] },
     })
       .select('code')
       .lean();
@@ -91,7 +161,12 @@ async function convertCustomerHandler(
       }
     }
 
-    const code = `PRJ-${String(maxPrjNum + 1).padStart(3, '0')}`;
+    let nextNum = maxPrjNum + 1;
+    let code = `PRJ-${String(nextNum).padStart(3, '0')}`;
+    while (await Project.findOne({ organizationId, code, isDeleted: { $in: [true, false] } })) {
+      nextNum++;
+      code = `PRJ-${String(nextNum).padStart(3, '0')}`;
+    }
 
     const start = new Date(startDate || Date.now());
     const end = new Date(start.getTime() + 90 * 24 * 60 * 60 * 1000);
@@ -201,6 +276,7 @@ async function convertCustomerHandler(
 
     if (acceptedQuotation) {
       acceptedQuotation.status = 'Accepted';
+      customer.markModified('quotations');
     }
 
     await customer.save();

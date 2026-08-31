@@ -7,6 +7,8 @@ import { withAuth, getOrganizationId } from '@/middlewares/auth.middleware';
 import { withProjectPermission } from '@/middlewares/project-auth.middleware';
 import { connectDB } from '@/lib/db';
 import { Project } from '@/models/project.model';
+import { CrmCustomer } from '@/models/crm-customer.model';
+import { CrmActivity } from '@/models/crm-activity.model';
 import { calculateProjectMetrics } from '@/services/project-metrics.service';
 import { successResponse, notFoundResponse, serverErrorResponse, errorResponse } from '@/lib/api-response';
 import type { JwtPayload } from '@/lib/jwt';
@@ -43,9 +45,34 @@ async function getProjectDetailsHandler(req: NextRequest, context: { params: Pro
       return notFoundResponse('Project not found');
     }
 
+    let budgetObj = project.budget || { amount: 0, currency: 'INR' };
+    if (!budgetObj.amount || budgetObj.amount === 0) {
+      const c = await CrmCustomer.findOne({ organizationId, linkedProject: projectId }).select('quotations boqs budgetRange').lean();
+      if (c) {
+        let bAmount = 0;
+        if (c.quotations && c.quotations.length > 0) {
+          const accepted: any = c.quotations.find((q: any) => q.status === 'Accepted' || q.status === 'Approved') || c.quotations[c.quotations.length - 1];
+          bAmount = Number(accepted?.grandTotal || accepted?.totalAmount || accepted?.subtotal || accepted?.total || 0);
+        }
+        if (!bAmount && c.boqs && c.boqs.length > 0) {
+          bAmount = Number(c.boqs[c.boqs.length - 1]?.totalAmount || 0);
+        }
+        if (!bAmount && c.budgetRange) {
+          const cleaned = String(c.budgetRange).replace(/[^0-9.]/g, '');
+          const parsed = parseFloat(cleaned);
+          if (!isNaN(parsed) && parsed > 0) bAmount = parsed;
+        }
+        if (bAmount > 0) {
+          budgetObj = { ...budgetObj, amount: bAmount };
+          Project.updateOne({ _id: projectId }, { $set: { 'budget.amount': bAmount } }).catch(() => {});
+        }
+      }
+    }
+
     const metrics = await calculateProjectMetrics(projectId, organizationId, project);
     const enrichedProject = {
       ...project.toJSON(),
+      budget: budgetObj,
       progress: metrics.progress,
       health: metrics.health,
       healthColor: metrics.healthColor,
@@ -106,7 +133,45 @@ async function deleteProjectHandler(req: NextRequest, context: { params: Promise
       return notFoundResponse('Project not found');
     }
 
-    return successResponse(null, 'Project deleted successfully');
+    // Unlock any CRM Lead / Customer linked to this project
+    const linkedCustomers = await CrmCustomer.find({
+      organizationId,
+      linkedProject: projectId,
+    });
+
+    for (const customer of linkedCustomers) {
+      customer.linkedProject = undefined;
+      // Revert status to pre-conversion
+      if (customer.status === 'Won' || customer.status === 'Converted') {
+        const hasAcceptedQuote = customer.quotations?.some((q: any) => q.status === 'Accepted');
+        customer.status = hasAcceptedQuote
+          ? 'Booking Pending'
+          : (customer.quotations && customer.quotations.length > 0
+            ? 'Under Quotation'
+            : (customer.boqs && customer.boqs.length > 0
+              ? 'Under BOQ Creation'
+              : (customer.designFiles && customer.designFiles.length > 0
+                ? 'Under Drawing'
+                : 'Under Requirement')));
+      }
+      await customer.save();
+
+      // Log CRM Activity
+      try {
+        await CrmActivity.create({
+          organizationId,
+          customer: customer._id,
+          user: auth.userId,
+          type: 'Status Change',
+          status: 'Completed',
+          remarks: `Linked Project "${project.name}" (${project.code || ''}) was deleted. Lead is now unlocked for editing.`,
+        });
+      } catch (actErr) {
+        console.warn('Failed to log CRM activity on project delete:', actErr);
+      }
+    }
+
+    return successResponse(null, 'Project deleted successfully and linked leads unlocked');
   } catch (error) {
     console.error('Delete project error:', error);
     return serverErrorResponse();
