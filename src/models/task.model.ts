@@ -71,6 +71,14 @@ const TaskAttachmentSchema = new Schema<ITaskAttachment>(
 );
 
 // ── Task Interface & Schema ──────────────────────────────────────────────────
+export interface ISubtask {
+  _id?: mongoose.Types.ObjectId;
+  title: string;
+  completed: boolean;
+  dueDate?: Date;
+  assignedTo?: mongoose.Types.ObjectId;
+}
+
 export interface ITask extends Document {
   _id: mongoose.Types.ObjectId;
   organizationId: mongoose.Types.ObjectId;
@@ -85,11 +93,22 @@ export interface ITask extends Document {
   assignees: mongoose.Types.ObjectId[];
   progress: number;
   dependencies: mongoose.Types.ObjectId[];
+  subtasks: ISubtask[];
   isDeleted: boolean;
   deletedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
+
+const SubtaskSchema = new Schema<ISubtask>(
+  {
+    title: { type: String, required: true, trim: true },
+    completed: { type: Boolean, default: false },
+    dueDate: Date,
+    assignedTo: { type: Schema.Types.ObjectId, ref: 'User' },
+  },
+  { _id: true, timestamps: true }
+);
 
 const TaskSchema = new Schema<ITask>(
   {
@@ -115,6 +134,7 @@ const TaskSchema = new Schema<ITask>(
     assignees: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     progress: { type: Number, default: 0, min: 0, max: 100 },
     dependencies: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
+    subtasks: { type: [SubtaskSchema], default: [] },
     isDeleted: { type: Boolean, default: false, index: true },
     deletedAt: Date,
   },

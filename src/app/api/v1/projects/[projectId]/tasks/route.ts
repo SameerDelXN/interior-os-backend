@@ -12,6 +12,13 @@ import { successResponse, createdResponse, serverErrorResponse, errorResponse } 
 import type { JwtPayload } from '@/lib/jwt';
 import { z } from 'zod';
 
+const subtaskInputSchema = z.object({
+  title: z.string().min(1, 'Subtask title is required'),
+  completed: z.boolean().default(false),
+  dueDate: z.string().optional().transform((val) => val ? new Date(val) : undefined),
+  assignedTo: z.string().optional(),
+});
+
 const createTaskSchema = z.object({
   packageId: z.string().min(1, 'Package ID is required'),
   name: z.string().min(1, 'Task name is required').max(100),
@@ -22,6 +29,8 @@ const createTaskSchema = z.object({
   endDate: z.string().optional().transform((val) => val ? new Date(val) : undefined),
   assignees: z.array(z.string()).optional().default([]),
   dependencies: z.array(z.string()).optional().default([]),
+  subtasks: z.array(subtaskInputSchema).optional().default([]),
+  progress: z.number().min(0).max(100).optional(),
 });
 
 // GET: List all tasks for project
@@ -54,6 +63,7 @@ async function getTasksHandler(req: NextRequest, context: { params: Promise<Reco
     const tasks = await Task.find(query)
       .populate('assignees', 'firstName lastName email avatar designation')
       .populate('packageId', 'name trade')
+      .populate('dependencies', 'name status progress')
       .sort({ createdAt: -1 });
 
     return successResponse(tasks);
@@ -84,8 +94,37 @@ async function createTaskHandler(req: NextRequest, context: { params: Promise<Re
       return errorResponse('Linked WBS package not found', 404);
     }
 
+    // Validate dependencies belong to the same project
+    if (data.dependencies && data.dependencies.length > 0) {
+      const validCount = await Task.countDocuments({
+        _id: { $in: data.dependencies },
+        projectId,
+        organizationId,
+        isDeleted: false,
+      });
+      if (validCount !== data.dependencies.length) {
+        return errorResponse('One or more dependency tasks do not exist in this project', 400);
+      }
+    }
+
+    // Calculate progress from subtasks if subtasks are supplied
+    let computedProgress = data.progress ?? 0;
+    if (data.subtasks && data.subtasks.length > 0) {
+      const completedCount = data.subtasks.filter(s => s.completed).length;
+      computedProgress = Math.round((completedCount / data.subtasks.length) * 100);
+    }
+
+    let initialStatus = data.status;
+    if (computedProgress === 100 && initialStatus !== 'completed') {
+      initialStatus = 'completed';
+    } else if (initialStatus === 'completed' && computedProgress === 0 && (!data.subtasks || data.subtasks.length === 0)) {
+      computedProgress = 100;
+    }
+
     const task = new Task({
       ...data,
+      status: initialStatus,
+      progress: computedProgress,
       projectId,
       organizationId,
     });

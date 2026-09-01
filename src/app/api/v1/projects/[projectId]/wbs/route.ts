@@ -33,14 +33,28 @@ async function getWbsHandler(req: NextRequest, context: { params: Promise<Record
     const organizationId = getOrganizationId(auth);
     const { projectId } = await context.params;
 
-    // Fetch all nodes in parallel
-    const [buildings, floors, zones, areas, packages] = await Promise.all([
+    // Fetch all nodes and tasks in parallel
+    const [buildings, floors, zones, areas, packages, tasks] = await Promise.all([
       Building.find({ projectId, organizationId }).lean(),
       Floor.find({ projectId, organizationId }).lean(),
       Zone.find({ projectId, organizationId }).lean(),
       Area.find({ projectId, organizationId }).lean(),
       Package.find({ projectId, organizationId }).lean(),
+      Task.find({ projectId, organizationId, isDeleted: false }).select('packageId status progress').lean(),
     ]);
+
+    // Map tasks by packageId
+    const taskStatsByPackage = new Map<string, { total: number; completed: number; progressSum: number }>();
+    for (const t of tasks) {
+      if (t.packageId) {
+        const pkgId = String(t.packageId);
+        const curr = taskStatsByPackage.get(pkgId) || { total: 0, completed: 0, progressSum: 0 };
+        curr.total += 1;
+        if (t.status === 'completed') curr.completed += 1;
+        curr.progressSum += (t.progress || 0);
+        taskStatsByPackage.set(pkgId, curr);
+      }
+    }
 
     // Build hierarchical tree in-memory
     const tree = buildings.map((b: any) => {
@@ -55,12 +69,19 @@ async function getWbsHandler(req: NextRequest, context: { params: Promise<Record
                 .map((a: any) => {
                   const aPackages = packages
                     .filter((p: any) => String(p.areaId) === String(a._id))
-                    .map((p: any) => ({
-                      id: String(p._id),
-                      name: p.name,
-                      type: 'package',
-                      trade: p.trade,
-                    }));
+                    .map((p: any) => {
+                      const stats = taskStatsByPackage.get(String(p._id)) || { total: 0, completed: 0, progressSum: 0 };
+                      const pkgProgress = stats.total > 0 ? Math.round(stats.progressSum / stats.total) : 0;
+                      return {
+                        id: String(p._id),
+                        name: p.name,
+                        type: 'package',
+                        trade: p.trade,
+                        taskCount: stats.total,
+                        completedTaskCount: stats.completed,
+                        progress: pkgProgress,
+                      };
+                    });
 
                   return {
                     id: String(a._id),
@@ -93,6 +114,66 @@ async function getWbsHandler(req: NextRequest, context: { params: Promise<Record
         floors: bFloors,
       };
     });
+
+    // Check for packages that might not be under existing buildings/areas
+    const mappedPkgIds = new Set<string>();
+    for (const b of tree) {
+      for (const f of (b as any).floors || []) {
+        for (const z of (f as any).zones || []) {
+          for (const a of (z as any).areas || []) {
+            for (const p of (a as any).packages || []) {
+              mappedPkgIds.add(String(p.id));
+            }
+          }
+        }
+      }
+    }
+
+    const unmappedPkgs = packages
+      .filter((p: any) => !mappedPkgIds.has(String(p._id)))
+      .map((p: any) => {
+        const stats = taskStatsByPackage.get(String(p._id)) || { total: 0, completed: 0, progressSum: 0 };
+        const pkgProgress = stats.total > 0 ? Math.round(stats.progressSum / stats.total) : 0;
+        return {
+          id: String(p._id),
+          name: p.name,
+          type: 'package',
+          trade: p.trade,
+          taskCount: stats.total,
+          completedTaskCount: stats.completed,
+          progress: pkgProgress,
+        };
+      });
+
+    if (unmappedPkgs.length > 0) {
+      tree.push({
+        id: 'unmapped-general',
+        name: 'General Packages',
+        type: 'building',
+        floors: [
+          {
+            id: 'unmapped-general-floor',
+            name: 'General',
+            type: 'floor',
+            zones: [
+              {
+                id: 'unmapped-general-zone',
+                name: 'General',
+                type: 'zone',
+                areas: [
+                  {
+                    id: 'unmapped-general-area',
+                    name: 'General Area',
+                    type: 'area',
+                    packages: unmappedPkgs,
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      });
+    }
 
     return successResponse(tree);
   } catch (error) {

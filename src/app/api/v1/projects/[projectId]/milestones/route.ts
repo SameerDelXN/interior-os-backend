@@ -11,6 +11,8 @@ import { successResponse, createdResponse, serverErrorResponse, errorResponse } 
 import type { JwtPayload } from '@/lib/jwt';
 import { z } from 'zod';
 
+import { Task } from '@/models/task.model';
+
 const createMilestoneSchema = z.object({
   name: z.string().min(1, 'Milestone name is required').max(100),
   dueDate: z.string().transform((val) => new Date(val)),
@@ -31,9 +33,12 @@ async function getMilestonesHandler(req: NextRequest, context: { params: Promise
     // For each milestone, query its delays and sync status if linked tasks exist
     const enrichedMilestones = await Promise.all(
       milestones.map(async (milestone) => {
+        // Safely filter out any soft-deleted or null populated tasks
+        const activeTasks = (milestone.linkedTasks || []).filter(Boolean) as any[];
+
         let computedStatus = milestone.status;
-        if (milestone.linkedTasks && milestone.linkedTasks.length > 0) {
-          const allCompleted = milestone.linkedTasks.every((t: any) => t.status === 'completed');
+        if (activeTasks.length > 0) {
+          const allCompleted = activeTasks.every((t: any) => t.status === 'completed');
           if (allCompleted) {
             computedStatus = 'achieved';
           } else {
@@ -60,9 +65,15 @@ async function getMilestonesHandler(req: NextRequest, context: { params: Promise
         const delays = await MilestoneDelay.find({ milestoneId: milestone._id, projectId, organizationId })
           .populate('approvedBy', 'firstName lastName')
           .sort({ createdAt: -1 });
+
+        const completedCount = activeTasks.filter((t: any) => t.status === 'completed').length;
+        const progress = activeTasks.length > 0 ? Math.round((completedCount / activeTasks.length) * 100) : (computedStatus === 'achieved' ? 100 : 0);
+
         return {
           ...milestone.toJSON(),
+          linkedTasks: activeTasks,
           status: computedStatus,
+          progress,
           delays,
         };
       })
@@ -88,8 +99,25 @@ async function createMilestoneHandler(req: NextRequest, context: { params: Promi
       return errorResponse(validation.error.issues[0].message, 400);
     }
 
+    const { name, dueDate, linkedTasks } = validation.data;
+
+    // Validate linked tasks belong to this project
+    if (linkedTasks && linkedTasks.length > 0) {
+      const validCount = await Task.countDocuments({
+        _id: { $in: linkedTasks },
+        projectId,
+        organizationId,
+        isDeleted: false,
+      });
+      if (validCount !== linkedTasks.length) {
+        return errorResponse('One or more linked tasks do not exist in this project', 400);
+      }
+    }
+
     const milestone = new Milestone({
-      ...validation.data,
+      name,
+      dueDate,
+      linkedTasks,
       projectId,
       organizationId,
       status: 'planned',

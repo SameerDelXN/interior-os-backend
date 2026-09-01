@@ -11,6 +11,8 @@ import { successResponse, notFoundResponse, serverErrorResponse, errorResponse }
 import type { JwtPayload } from '@/lib/jwt';
 import { z } from 'zod';
 
+import { Task } from '@/models/task.model';
+
 const updateMilestoneSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   dueDate: z.string().transform((val) => new Date(val)).optional(),
@@ -32,10 +34,12 @@ async function getMilestoneDetailsHandler(req: NextRequest, context: { params: P
       return notFoundResponse('Milestone not found');
     }
 
-    // Sync computed status based on linked tasks
+    const activeTasks = (milestone.linkedTasks || []).filter(Boolean) as any[];
+
+    // Sync computed status based on active linked tasks
     let computedStatus = milestone.status;
-    if (milestone.linkedTasks && milestone.linkedTasks.length > 0) {
-      const allCompleted = milestone.linkedTasks.every((t: any) => t.status === 'completed');
+    if (activeTasks.length > 0) {
+      const allCompleted = activeTasks.every((t: any) => t.status === 'completed');
       if (allCompleted) {
         computedStatus = 'achieved';
       } else {
@@ -60,7 +64,15 @@ async function getMilestoneDetailsHandler(req: NextRequest, context: { params: P
       await milestone.save();
     }
 
-    return successResponse(milestone);
+    const completedCount = activeTasks.filter((t: any) => t.status === 'completed').length;
+    const progress = activeTasks.length > 0 ? Math.round((completedCount / activeTasks.length) * 100) : (computedStatus === 'achieved' ? 100 : 0);
+
+    return successResponse({
+      ...milestone.toJSON(),
+      linkedTasks: activeTasks,
+      status: computedStatus,
+      progress,
+    });
   } catch (error) {
     console.error('Get milestone details error:', error);
     return serverErrorResponse();
@@ -80,9 +92,24 @@ async function updateMilestoneHandler(req: NextRequest, context: { params: Promi
       return errorResponse(validation.error.issues[0].message, 400);
     }
 
+    const updateData: any = { ...validation.data };
+
+    // Validate linked tasks if provided
+    if (updateData.linkedTasks !== undefined && updateData.linkedTasks.length > 0) {
+      const validCount = await Task.countDocuments({
+        _id: { $in: updateData.linkedTasks },
+        projectId,
+        organizationId,
+        isDeleted: false,
+      });
+      if (validCount !== updateData.linkedTasks.length) {
+        return errorResponse('One or more linked tasks do not exist in this project', 400);
+      }
+    }
+
     const milestone = await Milestone.findOneAndUpdate(
       { _id: milestoneId, projectId, organizationId, isDeleted: false },
-      { $set: validation.data },
+      { $set: updateData },
       { new: true }
     ).populate('linkedTasks', 'name status progress');
 
@@ -90,10 +117,12 @@ async function updateMilestoneHandler(req: NextRequest, context: { params: Promi
       return notFoundResponse('Milestone not found');
     }
 
-    // Sync computed status based on linked tasks
+    const activeTasks = (milestone.linkedTasks || []).filter(Boolean) as any[];
+
+    // Sync computed status based on active linked tasks
     let computedStatus = milestone.status;
-    if (milestone.linkedTasks && milestone.linkedTasks.length > 0) {
-      const allCompleted = milestone.linkedTasks.every((t: any) => t.status === 'completed');
+    if (activeTasks.length > 0) {
+      const allCompleted = activeTasks.every((t: any) => t.status === 'completed');
       if (allCompleted) {
         computedStatus = 'achieved';
       } else {
@@ -118,7 +147,15 @@ async function updateMilestoneHandler(req: NextRequest, context: { params: Promi
       await milestone.save();
     }
 
-    return successResponse(milestone, 'Milestone updated successfully');
+    const completedCount = activeTasks.filter((t: any) => t.status === 'completed').length;
+    const progress = activeTasks.length > 0 ? Math.round((completedCount / activeTasks.length) * 100) : (computedStatus === 'achieved' ? 100 : 0);
+
+    return successResponse({
+      ...milestone.toJSON(),
+      linkedTasks: activeTasks,
+      status: computedStatus,
+      progress,
+    }, 'Milestone updated successfully');
   } catch (error) {
     console.error('Update milestone error:', error);
     return serverErrorResponse();
