@@ -49,6 +49,7 @@ const updateCustomerSchema = z.object({
   quotations: z.array(z.any()).optional(),
   boqs: z.array(z.any()).optional(),
   remarks: z.string().optional(),
+  lostReason: z.string().optional(),
 });
 
 // PATCH: Update a Customer (e.g. Status change)
