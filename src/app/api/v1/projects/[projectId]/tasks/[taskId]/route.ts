@@ -21,6 +21,20 @@ const subtaskInputSchema = z.object({
   assignedTo: z.string().optional(),
 });
 
+const completionProofImageSchema = z.object({
+  url: z.string().min(1, 'Image URL is required'),
+  name: z.string().optional(),
+  size: z.number().optional(),
+  uploadedAt: z.string().optional().transform((val) => val ? new Date(val) : new Date()),
+});
+
+const completionProofInputSchema = z.object({
+  images: z.array(completionProofImageSchema).default([]),
+  notes: z.string().optional(),
+  completedAt: z.string().optional().transform((val) => val ? new Date(val) : new Date()),
+  completedBy: z.string().optional(),
+});
+
 const updateTaskSchema = z.object({
   packageId: z.string().optional(),
   name: z.string().min(1).max(100).optional(),
@@ -33,6 +47,7 @@ const updateTaskSchema = z.object({
   progress: z.number().min(0).max(100).optional(),
   dependencies: z.array(z.string()).optional(),
   subtasks: z.array(subtaskInputSchema).optional(),
+  completionProof: completionProofInputSchema.optional(),
 });
 
 // Helper: Check for circular dependencies
@@ -142,14 +157,14 @@ async function updateTaskHandler(req: NextRequest, context: { params: Promise<Re
       }
     }
 
-    // Auto calculate progress from subtasks if subtasks were provided
+    // Auto calculate progress and transition status from subtasks if subtasks were provided
     if (updateData.subtasks !== undefined) {
       if (updateData.subtasks.length > 0) {
         const completedCount = updateData.subtasks.filter((s: any) => s.completed).length;
         updateData.progress = Math.round((completedCount / updateData.subtasks.length) * 100);
         if (updateData.progress === 100 && (!updateData.status || updateData.status !== 'completed')) {
           updateData.status = 'completed';
-        } else if (updateData.progress < 100 && updateData.status === 'completed') {
+        } else if (updateData.progress > 0 && updateData.progress < 100) {
           updateData.status = 'in_progress';
         }
       } else if (updateData.progress === undefined) {

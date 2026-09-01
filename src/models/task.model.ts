@@ -79,6 +79,20 @@ export interface ISubtask {
   assignedTo?: mongoose.Types.ObjectId;
 }
 
+export interface ICompletionProofImage {
+  url: string;
+  name?: string;
+  size?: number;
+  uploadedAt?: Date;
+}
+
+export interface ICompletionProof {
+  images: ICompletionProofImage[];
+  notes?: string;
+  completedAt?: Date;
+  completedBy?: mongoose.Types.ObjectId;
+}
+
 export interface ITask extends Document {
   _id: mongoose.Types.ObjectId;
   organizationId: mongoose.Types.ObjectId;
@@ -94,6 +108,7 @@ export interface ITask extends Document {
   progress: number;
   dependencies: mongoose.Types.ObjectId[];
   subtasks: ISubtask[];
+  completionProof?: ICompletionProof;
   isDeleted: boolean;
   deletedAt?: Date;
   createdAt: Date;
@@ -110,6 +125,26 @@ const SubtaskSchema = new Schema<ISubtask>(
   { _id: true, timestamps: true }
 );
 
+const CompletionProofImageSchema = new Schema<ICompletionProofImage>(
+  {
+    url: { type: String, required: true, trim: true },
+    name: { type: String, trim: true },
+    size: Number,
+    uploadedAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
+const CompletionProofSchema = new Schema<ICompletionProof>(
+  {
+    images: { type: [CompletionProofImageSchema], default: [] },
+    notes: { type: String, trim: true },
+    completedAt: { type: Date, default: Date.now },
+    completedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  },
+  { _id: false }
+);
+
 const TaskSchema = new Schema<ITask>(
   {
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
@@ -120,7 +155,7 @@ const TaskSchema = new Schema<ITask>(
     status: {
       type: String,
       enum: ['backlog', 'todo', 'in_progress', 'in_review', 'completed'],
-      default: 'backlog',
+      default: 'todo',
       index: true,
     },
     priority: {
@@ -135,6 +170,7 @@ const TaskSchema = new Schema<ITask>(
     progress: { type: Number, default: 0, min: 0, max: 100 },
     dependencies: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
     subtasks: { type: [SubtaskSchema], default: [] },
+    completionProof: { type: CompletionProofSchema, default: null },
     isDeleted: { type: Boolean, default: false, index: true },
     deletedAt: Date,
   },

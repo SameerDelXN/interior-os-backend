@@ -23,7 +23,7 @@ const createTaskSchema = z.object({
   packageId: z.string().min(1, 'Package ID is required'),
   name: z.string().min(1, 'Task name is required').max(100),
   description: z.string().optional(),
-  status: z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'completed']).default('backlog'),
+  status: z.enum(['backlog', 'todo', 'in_progress', 'in_review', 'completed']).default('todo'),
   priority: z.enum(['low', 'medium', 'high', 'critical']).default('medium'),
   startDate: z.string().optional().transform((val) => val ? new Date(val) : undefined),
   endDate: z.string().optional().transform((val) => val ? new Date(val) : undefined),
