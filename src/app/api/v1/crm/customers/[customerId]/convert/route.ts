@@ -67,11 +67,34 @@ async function convertCustomerHandler(
 
     // Helper to safely parse numeric values from numbers or strings like "₹ 1,50,000"
     const parseNum = (val: any): number => {
+      if (!val) return 0;
       if (typeof val === 'number') return isNaN(val) ? 0 : val;
       if (typeof val === 'string') {
+        const lower = val.toLowerCase().trim();
+        const crMatch = lower.match(/([0-9.]+)\s*(?:cr|crore)/);
+        if (crMatch) {
+          const num = parseFloat(crMatch[1]);
+          if (!isNaN(num)) return num * 10000000;
+        }
+        const lakhMatch = lower.match(/([0-9.]+)\s*(?:lakh|lac|l\b)/);
+        if (lakhMatch) {
+          const num = parseFloat(lakhMatch[1]);
+          if (!isNaN(num)) return num * 100000;
+        }
+        const kMatch = lower.match(/([0-9.]+)\s*k\b/);
+        if (kMatch) {
+          const num = parseFloat(kMatch[1]);
+          if (!isNaN(num)) return num * 1000;
+        }
         const cleaned = val.replace(/[^0-9.]/g, '');
         const n = parseFloat(cleaned);
         return isNaN(n) ? 0 : n;
+      }
+      if (typeof val === 'object' && val !== null) {
+        if (val.amount !== undefined) return parseNum(val.amount);
+        if (val.value !== undefined) return parseNum(val.value);
+        if (val.total !== undefined) return parseNum(val.total);
+        if (val.grandTotal !== undefined) return parseNum(val.grandTotal);
       }
       return 0;
     };

@@ -33,8 +33,9 @@ async function createDrawingHandler(req: NextRequest, context: { params: Promise
     const { projectId } = await context.params;
     const body = await req.json();
 
-    const { title, discipline, fileUrl, drawingType, fileType } = body;
-    if (!title || !fileUrl) {
+    const { title, discipline, fileUrl, url, drawingType, fileType } = body;
+    const effectiveFileUrl = fileUrl || url;
+    if (!title || !effectiveFileUrl) {
       return errorResponse('title and fileUrl are required', 400);
     }
 
@@ -56,7 +57,7 @@ async function createDrawingHandler(req: NextRequest, context: { params: Promise
       revisions: [
         {
           revision: 'Rev 0',
-          url: fileUrl,
+          url: effectiveFileUrl,
           uploadedBy: new mongoose.Types.ObjectId(auth.userId),
           changes: 'Initial release',
           createdAt: new Date(),
@@ -80,7 +81,7 @@ async function updateDrawingHandler(req: NextRequest, context: { params: Promise
     const { projectId } = await context.params;
     const body = await req.json();
 
-    const { drawingId, status, fileUrl, changes, revisionName, title, discipline, drawingType, fileType } = body;
+    const { drawingId, status, fileUrl, url, changes, revisionName, revision, title, discipline, drawingType, fileType } = body;
     if (!drawingId) {
       return errorResponse('drawingId is required', 400);
     }
@@ -90,11 +91,14 @@ async function updateDrawingHandler(req: NextRequest, context: { params: Promise
       return notFoundResponse('Drawing not found');
     }
 
+    const effectiveFileUrl = fileUrl || url;
+    const effectiveRevName = revisionName || revision;
+
     // If uploading a new revision
-    if (fileUrl && revisionName) {
+    if (effectiveFileUrl && effectiveRevName) {
       drawing.revisions.push({
-        revision: revisionName,
-        url: fileUrl,
+        revision: effectiveRevName,
+        url: effectiveFileUrl,
         uploadedBy: new mongoose.Types.ObjectId(auth.userId),
         changes: changes || '',
         createdAt: new Date(),
