@@ -53,12 +53,12 @@ export function verificationEmailTemplate(name: string, verificationUrl: string)
   return `
     <div style="font-family: 'Inter', -apple-system, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
       <div style="text-align: center; margin-bottom: 32px;">
-        <h1 style="font-size: 24px; font-weight: 700; color: #0f172a; margin: 0;">InteriorOS</h1>
+        <h1 style="font-size: 24px; font-weight: 700; color: #0f172a; margin: 0;">SkyStruct Lite Interior</h1>
       </div>
       <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px;">
         <h2 style="font-size: 20px; font-weight: 600; color: #0f172a; margin: 0 0 16px;">Verify your email</h2>
         <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
-          Hi ${name}, welcome to InteriorOS! Please verify your email address to get started.
+          Hi ${name}, welcome to SkyStruct Lite Interior! Please verify your email address to get started.
         </p>
         <a href="${verificationUrl}" style="display: inline-block; background: #0f172a; color: #ffffff; font-size: 14px; font-weight: 500; padding: 12px 24px; border-radius: 8px; text-decoration: none;">
           Verify Email Address
@@ -75,7 +75,7 @@ export function resetPasswordEmailTemplate(name: string, otp: string): string {
   return `
     <div style="font-family: 'Inter', -apple-system, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
       <div style="text-align: center; margin-bottom: 32px;">
-        <h1 style="font-size: 24px; font-weight: 700; color: #0f172a; margin: 0;">InteriorOS</h1>
+        <h1 style="font-size: 24px; font-weight: 700; color: #0f172a; margin: 0;">SkyStruct Lite Interior</h1>
       </div>
       <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px; text-align: center;">
         <h2 style="font-size: 20px; font-weight: 600; color: #0f172a; margin: 0 0 16px;">Reset your password</h2>
@@ -97,10 +97,10 @@ export function welcomeEmailTemplate(name: string, loginUrl: string): string {
   return `
     <div style="font-family: 'Inter', -apple-system, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
       <div style="text-align: center; margin-bottom: 32px;">
-        <h1 style="font-size: 24px; font-weight: 700; color: #0f172a; margin: 0;">InteriorOS</h1>
+        <h1 style="font-size: 24px; font-weight: 700; color: #0f172a; margin: 0;">SkyStruct Lite Interior</h1>
       </div>
       <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px;">
-        <h2 style="font-size: 20px; font-weight: 600; color: #0f172a; margin: 0 0 16px;">Welcome to InteriorOS!</h2>
+        <h2 style="font-size: 20px; font-weight: 600; color: #0f172a; margin: 0 0 16px;">Welcome to SkyStruct Lite Interior!</h2>
         <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
           Hi ${name}, your account has been verified successfully. You're all set to start managing your interior fit-out projects.
         </p>
@@ -116,7 +116,7 @@ export function otpEmailTemplate(name: string, otp: string): string {
   return `
     <div style="font-family: 'Inter', -apple-system, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
       <div style="text-align: center; margin-bottom: 32px;">
-        <h1 style="font-size: 24px; font-weight: 700; color: #0f172a; margin: 0;">InteriorOS</h1>
+        <h1 style="font-size: 24px; font-weight: 700; color: #0f172a; margin: 0;">SkyStruct Lite Interior</h1>
       </div>
       <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px; text-align: center;">
         <h2 style="font-size: 20px; font-weight: 600; color: #0f172a; margin: 0 0 16px;">Verify your email address</h2>
@@ -148,7 +148,7 @@ export function quotationInvoiceEmailTemplate(
     notes?: string;
     createdAt?: Date | string;
   },
-  companyName: string = 'InteriorOS'
+  companyName: string = 'SkyStruct-Lite Interior'
 ): string {
   const formattedItems = (quotation.items || []).map((item: any, idx) => {
     const desc = item.description || item.itemName || item.name || `Item ${idx + 1}`;

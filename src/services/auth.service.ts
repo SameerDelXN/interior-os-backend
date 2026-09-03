@@ -48,7 +48,7 @@ export async function signup(input: SignupInput) {
   const adminRole = await Role.create(adminRoleData);
 
   // Create remaining system roles
-  for (const key of ['project_manager', 'engineer', 'viewer'] as const) {
+  for (const key of ['project_manager', 'sales_executive', 'designer', 'quantity_surveyor', 'site_engineer', 'viewer'] as const) {
     await Role.create({
       ...DEFAULT_ROLES[key],
       organizationId: organization._id,
@@ -81,7 +81,7 @@ export async function signup(input: SignupInput) {
   // Send OTP verification email
   await sendEmail({
     to: user.email,
-    subject: 'Verify your InteriorOS account',
+    subject: 'Verify your SkyStruct-lite Interior account',
     html: otpEmailTemplate(user.firstName, emailVerificationOtp),
   });
 
@@ -224,7 +224,7 @@ export async function forgotPassword(email: string) {
 
   await sendEmail({
     to: user.email,
-    subject: 'Reset your InteriorOS password',
+    subject: 'Reset your SkyStruct-Lite Interior password',
     html: resetPasswordEmailTemplate(user.firstName, otp),
   });
 

@@ -39,7 +39,14 @@ export type ModuleName =
   | 'settings'
   | 'audit_logs'
   | 'filemgt'
-  | 'financials';
+  | 'financials'
+  | 'crm_leads'
+  | 'crm_followups'
+  | 'crm_site_visits'
+  | 'crm_requirements'
+  | 'crm_drawings'
+  | 'crm_boq'
+  | 'crm_quotations';
 
 export interface IPermission {
   module: ModuleName;
@@ -76,6 +83,8 @@ const PermissionSchema = new Schema<IPermission>(
         'ncrs', 'utilities', 'photos', 'handover', 'boq', 'change_requests', 'variation_orders', 'users',
         'roles', 'organization', 'reports', 'notifications',
         'settings', 'audit_logs', 'filemgt', 'financials',
+        'crm_leads', 'crm_followups', 'crm_site_visits',
+        'crm_requirements', 'crm_drawings', 'crm_boq', 'crm_quotations',
       ],
     },
     actions: [{
@@ -150,6 +159,8 @@ const allModules: ModuleName[] = [
   'ncrs', 'utilities', 'photos', 'handover', 'boq', 'change_requests', 'variation_orders', 'users',
   'roles', 'organization', 'reports', 'notifications',
   'settings', 'audit_logs', 'filemgt', 'financials',
+  'crm_leads', 'crm_followups', 'crm_site_visits',
+  'crm_requirements', 'crm_drawings', 'crm_boq', 'crm_quotations',
 ];
 
 const allActions: PermissionAction[] = ['create', 'read', 'update', 'delete', 'approve', 'export', 'manage'];
@@ -160,33 +171,89 @@ export const DEFAULT_ROLES = {
   admin: {
     name: 'Admin',
     slug: 'admin',
-    description: 'Full access to all modules',
+    description: 'Full access to all modules and CRM pipeline stages',
     permissions: allModules.map(module => ({ module, actions: allActions })),
     isSystem: true,
   },
   project_manager: {
     name: 'Project Manager',
     slug: 'project-manager',
-    description: 'Manage projects and related modules',
+    description: 'Manage projects and all CRM pipeline stages',
     permissions: allModules
       .filter(m => !['organization', 'roles', 'settings', 'audit_logs'].includes(m))
-      .map(module => ({ module, actions: standardActions.concat(['approve', 'export']) })),
+      .map(module => ({ module, actions: standardActions.concat(['approve', 'export', 'manage']) })),
     isSystem: true,
   },
-  engineer: {
-    name: 'Engineer',
-    slug: 'engineer',
-    description: 'Standard access for project engineers',
+  sales_executive: {
+    name: 'Sales / CRM Executive',
+    slug: 'sales-executive',
+    description: 'Manage CRM leads, follow-ups, quotes, and project conversion',
     permissions: [
-      'dashboard', 'projects', 'wbs', 'tasks', 'milestones',
-      'dpr', 'drawings', 'rfis', 'snags', 'ncrs', 'photos', 'mom', 'boq', 'filemgt',
-    ].map(module => ({ module: module as ModuleName, actions: standardActions })),
+      { module: 'dashboard' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'crm_leads' as ModuleName, actions: ['create', 'read', 'update', 'export', 'manage'] as PermissionAction[] },
+      { module: 'crm_followups' as ModuleName, actions: allActions },
+      { module: 'crm_site_visits' as ModuleName, actions: standardActions.concat(['manage']) },
+      { module: 'crm_requirements' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'crm_drawings' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'crm_boq' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'crm_quotations' as ModuleName, actions: standardActions.concat(['export', 'manage', 'approve']) },
+    ],
+    isSystem: true,
+  },
+  designer: {
+    name: 'Designer / Architect',
+    slug: 'designer',
+    description: 'Manage 2D/3D design files and room requirements',
+    permissions: [
+      { module: 'dashboard' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'projects' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'drawings' as ModuleName, actions: allActions },
+      { module: 'crm_leads' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'crm_site_visits' as ModuleName, actions: standardActions },
+      { module: 'crm_requirements' as ModuleName, actions: standardActions.concat(['manage']) },
+      { module: 'crm_drawings' as ModuleName, actions: allActions },
+      { module: 'crm_boq' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'crm_quotations' as ModuleName, actions: ['read' as PermissionAction] },
+    ],
+    isSystem: true,
+  },
+  quantity_surveyor: {
+    name: 'Quantity Surveyor',
+    slug: 'quantity-surveyor',
+    description: 'Manage BOQ estimation, material rates, and quotations',
+    permissions: [
+      { module: 'dashboard' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'projects' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'boq' as ModuleName, actions: allActions },
+      { module: 'procurement' as ModuleName, actions: standardActions },
+      { module: 'crm_leads' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'crm_requirements' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'crm_drawings' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'crm_boq' as ModuleName, actions: allActions },
+      { module: 'crm_quotations' as ModuleName, actions: standardActions.concat(['export', 'approve']) },
+    ],
+    isSystem: true,
+  },
+  site_engineer: {
+    name: 'Site Engineer',
+    slug: 'site-engineer',
+    description: 'Perform site survey, log dimensions, manage DPR and site photos',
+    permissions: [
+      { module: 'dashboard' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'projects' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'dpr' as ModuleName, actions: standardActions },
+      { module: 'photos' as ModuleName, actions: allActions },
+      { module: 'crm_leads' as ModuleName, actions: ['read' as PermissionAction] },
+      { module: 'crm_followups' as ModuleName, actions: standardActions },
+      { module: 'crm_site_visits' as ModuleName, actions: allActions },
+      { module: 'crm_requirements' as ModuleName, actions: ['read' as PermissionAction] },
+    ],
     isSystem: true,
   },
   viewer: {
     name: 'Viewer',
     slug: 'viewer',
-    description: 'Read-only access',
+    description: 'Read-only access across all modules',
     permissions: allModules
       .filter(m => !['roles', 'settings', 'audit_logs'].includes(m))
       .map(module => ({ module, actions: readOnly })),
