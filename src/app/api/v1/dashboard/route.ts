@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import mongoose from 'mongoose';
 import { withAuth, getOrganizationId } from '@/middlewares/auth.middleware';
 import { connectDB } from '@/lib/db';
 import { Project } from '@/models/project.model';
@@ -10,6 +11,7 @@ import { RFI } from '@/models/rfi.model';
 import { Risk } from '@/models/risk.model';
 import { PurchaseOrder } from '@/models/purchase-order.model';
 import { CrmCustomer } from '@/models/crm-customer.model';
+import { CRMLead } from '@/models/crm-lead.model';
 import { calculateProjectMetrics } from '@/services/project-metrics.service';
 import { successResponse, serverErrorResponse } from '@/lib/api-response';
 import type { JwtPayload } from '@/lib/jwt';
@@ -18,51 +20,93 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
   try {
     await connectDB();
     const organizationId = getOrganizationId(auth);
+    const orgIdObj = mongoose.Types.ObjectId.isValid(organizationId)
+      ? new mongoose.Types.ObjectId(organizationId)
+      : organizationId;
 
-    let projectFilter: any = { organizationId, isDeleted: false };
+    const orgMatchFilter = { $in: [organizationId, orgIdObj] };
+
+    let projectFilter: any = { organizationId: orgMatchFilter, isDeleted: false };
     
     // If the user is a regular member, restrict to projects they belong to
     if (auth.systemRole !== 'super_admin' && auth.systemRole !== 'org_admin') {
       const userMemberships = await ProjectMember.find({
         userId: auth.userId,
-        organizationId,
+        organizationId: orgMatchFilter,
         isDeleted: false,
       }).select('projectId');
       const projectIds = userMemberships.map((m) => m.projectId);
       projectFilter._id = { $in: projectIds };
     }
 
-    // 1. CRM Lead Metrics — single aggregation instead of 6 separate counts
-    const crmFilter = { organizationId };
-    const [leadAgg] = await CrmCustomer.aggregate([
-      { $match: crmFilter },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: 1 },
-          new: { $sum: { $cond: [{ $eq: ['$status', 'New Lead'] }, 1, 0] } },
-          won: { $sum: { $cond: [{ $eq: ['$status', 'Won'] }, 1, 0] } },
-          contacted: { $sum: { $cond: [{ $eq: ['$status', 'Contacted'] }, 1, 0] } },
-          meetingOrMeasured: { $sum: { $cond: [{ $in: ['$status', ['Meeting Scheduled', 'Measurement Done']] }, 1, 0] } },
-          reqCompleted: { $sum: { $cond: [{ $eq: ['$status', 'Under Requirement'] }, 1, 0] } },
-          quotSent: { $sum: { $cond: [{ $eq: ['$status', 'Under Quotation'] }, 1, 0] } },
-          lost: { $sum: { $cond: [{ $eq: ['$status', 'Lost'] }, 1, 0] } },
-        },
-      },
+    // 1. CRM Lead Metrics — query live records from CrmCustomer and CRMLead
+    const [allCrmCustomers, allCrmLeads] = await Promise.all([
+      CrmCustomer.find({ organizationId: orgMatchFilter }).lean(),
+      CRMLead.find({ organizationId: orgMatchFilter, isDeleted: false }).lean(),
     ]);
-    const lm = leadAgg || { total: 0, new: 0, won: 0, contacted: 0, meetingOrMeasured: 0, reqCompleted: 0, quotSent: 0, lost: 0 };
-    const totalLeads = lm.total;
-    const newLeads = lm.new;
-    const wonLeads = lm.won;
-    const activeLeads = lm.total - lm.won - lm.lost;
+
+    let totalLeads = 0;
+    let newLeads = 0;
+    let wonLeads = 0;
+    let contactedLeads = 0;
+    let siteVisitLeads = 0;
+    let requirementLeads = 0;
+    let quotationLeads = 0;
+    let lostLeads = 0;
+
+    for (const cust of allCrmCustomers) {
+      totalLeads++;
+      const st = cust.status || 'New Lead';
+      if (st === 'New Lead') {
+        newLeads++;
+      } else if (st === 'Won' || st === 'Converted') {
+        wonLeads++;
+      } else if (st === 'Lost') {
+        lostLeads++;
+      } else if (st === 'Contacted') {
+        contactedLeads++;
+      } else if (['Meeting Scheduled', 'Under Site Visit', 'Measurement Done'].includes(st)) {
+        siteVisitLeads++;
+      } else if (['Under Requirement', 'Requirement Completed', 'Under Drawing', 'Design Approved'].includes(st)) {
+        requirementLeads++;
+      } else if (['Under BOQ Creation', 'Under Quotation', 'Quotation Pending', 'Quotation Sent', 'Negotiation', 'Booking Pending'].includes(st)) {
+        quotationLeads++;
+      } else {
+        contactedLeads++;
+      }
+    }
+
+    for (const lead of allCrmLeads) {
+      totalLeads++;
+      const st = (lead.stage || 'lead').toLowerCase();
+      if (st === 'lead' || st === 'new') {
+        newLeads++;
+      } else if (st === 'won') {
+        wonLeads++;
+      } else if (st === 'lost') {
+        lostLeads++;
+      } else if (st === 'qualified' || st === 'contacted') {
+        contactedLeads++;
+      } else if (st === 'site_visit' || st === 'site visit') {
+        siteVisitLeads++;
+      } else if (st === 'design_proposal' || st === 'requirements') {
+        requirementLeads++;
+      } else if (st === 'quotation' || st === 'negotiation' || st === 'boq') {
+        quotationLeads++;
+      } else {
+        contactedLeads++;
+      }
+    }
+
+    const activeLeads = Math.max(0, totalLeads - wonLeads - lostLeads);
 
     const leadsPipeline = [
-      { stage: 'New Leads', count: lm.new },
-      { stage: 'Follow-ups', count: lm.contacted },
-      { stage: 'Site Visits', count: lm.meetingOrMeasured },
-      { stage: 'Requirements', count: lm.reqCompleted },
-      { stage: 'Quotations', count: lm.quotSent },
-      { stage: 'Won Projects', count: lm.won },
+      { stage: 'New Leads', count: newLeads },
+      { stage: 'Follow-ups', count: contactedLeads },
+      { stage: 'Site Visits', count: siteVisitLeads },
+      { stage: 'Requirements', count: requirementLeads },
+      { stage: 'Quotations', count: quotationLeads },
+      { stage: 'Won Projects', count: wonLeads },
     ];
 
     // 2. Projects and Basic Metrics
@@ -72,21 +116,18 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
     const activeProjectsCount = activeProjects.length;
 
     // Build query for other tables that limits them to user's projects
-    const scopeQuery: any = { organizationId, isDeleted: false };
+    const scopeQuery: any = { organizationId: orgMatchFilter, isDeleted: false };
     if (projectFilter._id) {
       scopeQuery.projectId = projectFilter._id;
     }
 
     // 2b. Count metrics in parallel instead of sequential
-    const [openSnags, openRFIs, criticalRisks, procurementPending, procurementAgg] = await Promise.all([
+    const [openSnags, openRFIs, criticalRisks, procurementPending, allPOs] = await Promise.all([
       Snag.countDocuments({ ...scopeQuery, status: { $in: ['open', 'assigned', 'in_progress'] } }),
       RFI.countDocuments({ ...scopeQuery, status: 'open' }),
       Risk.countDocuments({ ...scopeQuery, status: 'open', score: { $gte: 6 } }),
       PurchaseOrder.countDocuments({ ...scopeQuery, status: 'pending' }),
-      PurchaseOrder.aggregate([
-        { $match: { organizationId: scopeQuery.organizationId, isDeleted: false, ...(scopeQuery.projectId ? { projectId: scopeQuery.projectId } : {}) } },
-        { $group: { _id: '$status', count: { $sum: 1 } } },
-      ]),
+      PurchaseOrder.find({ ...scopeQuery }).select('status').lean(),
     ]);
 
     // 3. Project Health Evaluation
@@ -124,9 +165,13 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
     // Sort top projects by progress descending and limit to 5
     topProjects.sort((a, b) => b.progress - a.progress);
     const limitedTopProjects = topProjects.slice(0, 5);
-    // 4. Procurement Stats — already fetched via aggregation above
+    // 4. Procurement Stats
     const poStatuses = ['pending', 'approved', 'ordered', 'delivered', 'rejected'] as const;
-    const poCountMap = new Map(procurementAgg.map((r: { _id: string; count: number }) => [r._id, r.count]));
+    const poCountMap = new Map<string, number>();
+    for (const po of allPOs) {
+      const s = po.status || 'pending';
+      poCountMap.set(s, (poCountMap.get(s) || 0) + 1);
+    }
     const procurementData = poStatuses.map((status) => ({
       status: status.charAt(0).toUpperCase() + status.slice(1),
       count: poCountMap.get(status) || 0,
@@ -192,11 +237,12 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
     // 6. Recent Activity Feed — parallel queries
     const recentActivities: any[] = [];
 
-    const [recentTasks, recentSnags, recentRFIs, recentLeads] = await Promise.all([
+    const [recentTasks, recentSnags, recentRFIs, recentCrmCustomers, recentCrmLeads] = await Promise.all([
       Task.find(scopeQuery).sort({ updatedAt: -1 }).limit(3).populate('projectId', 'name').lean(),
       Snag.find(scopeQuery).sort({ createdAt: -1 }).limit(2).populate('projectId', 'name').lean(),
       RFI.find(scopeQuery).sort({ createdAt: -1 }).limit(2).populate('projectId', 'name').lean(),
-      CrmCustomer.find(crmFilter).sort({ updatedAt: -1 }).limit(3).lean(),
+      CrmCustomer.find({ organizationId: orgMatchFilter }).sort({ updatedAt: -1 }).limit(3).lean(),
+      CRMLead.find({ organizationId: orgMatchFilter, isDeleted: false }).sort({ updatedAt: -1 }).limit(3).lean(),
     ]);
 
     recentTasks.forEach(task => {
@@ -210,8 +256,8 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
       recentActivities.push({
         action,
         project: projName,
-        time: formatRelativeTime(task.updatedAt),
-        timestamp: task.updatedAt.getTime(),
+        time: formatRelativeTime(task.updatedAt ? new Date(task.updatedAt) : new Date()),
+        timestamp: task.updatedAt ? new Date(task.updatedAt).getTime() : Date.now(),
         type,
       });
     });
@@ -228,8 +274,8 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
       recentActivities.push({
         action,
         project: projName,
-        time: formatRelativeTime(snag.createdAt),
-        timestamp: snag.createdAt.getTime(),
+        time: formatRelativeTime(snag.createdAt ? new Date(snag.createdAt) : new Date()),
+        timestamp: snag.createdAt ? new Date(snag.createdAt).getTime() : Date.now(),
         type,
       });
     });
@@ -240,30 +286,54 @@ async function getGlobalDashboardHandler(req: NextRequest, _context: any, auth: 
       recentActivities.push({
         action: `RFI #${rfi.rfiNumber} raised: "${rfi.subject}"`,
         project: projName,
-        time: formatRelativeTime(rfi.createdAt),
-        timestamp: rfi.createdAt.getTime(),
+        time: formatRelativeTime(rfi.createdAt ? new Date(rfi.createdAt) : new Date()),
+        timestamp: rfi.createdAt ? new Date(rfi.createdAt).getTime() : Date.now(),
         type: 'warning',
       });
     });
 
-    // Latest CRM Leads
-    recentLeads.forEach(lead => {
+    // Latest CRM Customers
+    recentCrmCustomers.forEach(lead => {
       let action = `Lead "${lead.name}" (${lead.leadNumber || 'LD'}) is in ${lead.status}`;
       let type = 'info';
-      if (lead.status === 'Won') {
+      if (lead.status === 'Won' || lead.status === 'Converted') {
         action = `Lead "${lead.name}" converted (Won)`;
         type = 'success';
-      } else if (lead.status === 'Under Quotation') {
+      } else if (lead.status === 'Under Quotation' || lead.status === 'Quotation Sent') {
         action = `Quotation sent to "${lead.name}"`;
         type = 'warning';
-      } else if (lead.status === 'Measurement Done') {
+      } else if (lead.status === 'Measurement Done' || lead.status === 'Under Site Visit') {
         action = `Site measurements completed for "${lead.name}"`;
         type = 'info';
       }
-      const t = lead.updatedAt || lead.createdAt || new Date();
+      const t = lead.updatedAt ? new Date(lead.updatedAt) : lead.createdAt ? new Date(lead.createdAt) : new Date();
       recentActivities.push({
         action,
         project: lead.projectLocation || 'CRM Pipeline',
+        time: formatRelativeTime(t),
+        timestamp: t.getTime(),
+        type,
+      });
+    });
+
+    // Latest CRM Leads
+    recentCrmLeads.forEach(lead => {
+      let action = `Lead "${lead.leadName}" is in ${lead.stage}`;
+      let type = 'info';
+      if (lead.stage === 'won') {
+        action = `Lead "${lead.leadName}" converted (Won)`;
+        type = 'success';
+      } else if (lead.stage === 'quotation' || lead.stage === 'negotiation') {
+        action = `Quotation stage for "${lead.leadName}"`;
+        type = 'warning';
+      } else if (lead.stage === 'site_visit') {
+        action = `Site visit for "${lead.leadName}"`;
+        type = 'info';
+      }
+      const t = lead.updatedAt ? new Date(lead.updatedAt) : lead.createdAt ? new Date(lead.createdAt) : new Date();
+      recentActivities.push({
+        action,
+        project: lead.location || 'CRM Pipeline',
         time: formatRelativeTime(t),
         timestamp: t.getTime(),
         type,
